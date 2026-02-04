@@ -1,4 +1,6 @@
+# ===========================================
 # Python
+# ===========================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,45 +21,117 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
+# ===========================================
 # Virtual Environment
+# ===========================================
 venv/
 ENV/
 env/
 .venv/
+.conda/
+conda-env/
 
-# IDE
+# ===========================================
+# IDE & Editor
+# ===========================================
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+*.sublime-workspace
+*.sublime-project
+.spyderproject
+.spyproject
 
-# Environment Variables
+# ===========================================
+# Environment Variables (IMPORTANT!)
+# ===========================================
 .env
 .env.local
+.env.*.local
+*.env
 
+# ===========================================
 # Data & Cache
+# ===========================================
 data/chroma/
+data/*.db
+data/*.sqlite
 *.db
 *.sqlite
+*.sqlite3
 
+# ===========================================
 # Logs
+# ===========================================
 *.log
 logs/
+*.log.*
 
-# OS
+# ===========================================
+# OS Generated Files
+# ===========================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
+# ===========================================
 # Streamlit
+# ===========================================
 .streamlit/secrets.toml
+.streamlit/config.toml
 
-# Testing
+# ===========================================
+# Testing & Coverage
+# ===========================================
 .coverage
+.coverage.*
 htmlcov/
 .pytest_cache/
 .tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
 
-# Jupyter
+# ===========================================
+# Jupyter Notebooks
+# ===========================================
 .ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===========================================
+# Type Checkers
+# ===========================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# ===========================================
+# Documentation
+# ===========================================
+docs/_build/
+site/
+
+# ===========================================
+# User Data (用户学习数据，不应提交)
+# ===========================================
+~/.learningAgent/
+
+# ===========================================
+# Temporary Files
+# ===========================================
+*.tmp
+*.temp
+*.bak
+*.backup
