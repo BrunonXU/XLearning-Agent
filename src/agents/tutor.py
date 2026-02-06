@@ -188,3 +188,41 @@ class TutorAgent(BaseAgent):
         # 暂时用非流式实现
         response = self.run(user_input, history=history, use_rag=use_rag)
         yield response
+    
+    def answer(
+        self,
+        question: str,
+        rag_engine: Optional[RAGEngine] = None,
+        k: int = 3,
+    ) -> str:
+        """
+        RAG 增强问答（便捷方法）
+        
+        这是 TutorAgent 最常用的方法，整合了 RAG 检索和 LLM 问答。
+        
+        Args:
+            question: 用户问题
+            rag_engine: RAG 引擎（可选，使用已设置的）
+            k: 检索结果数量
+            
+        Returns:
+            回答内容
+            
+        面试话术：
+        > "answer() 是 TutorAgent 的核心方法。先从 RAG 检索相关内容，
+        >  然后把内容注入 Prompt 让 LLM 回答。这样既能利用 LLM 推理，
+        >  又能基于用户资料给出个性化回答。"
+        
+        使用示例：
+            tutor = TutorAgent()
+            tutor.set_rag_engine(rag_engine)
+            answer = tutor.answer("什么是 Self-Attention?")
+        """
+        # 使用传入的或已设置的 RAG 引擎
+        engine = rag_engine or self.rag_engine
+        
+        if engine:
+            self.rag_engine = engine
+        
+        return self.run(question, use_rag=(engine is not None))
+

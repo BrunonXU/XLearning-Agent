@@ -8,15 +8,18 @@ Orchestrator - 协调器
 4. 状态管理
 
 双模式设计：
-- 单独模式：用户精细控制每个 Agent
-- 协调模式：自动编排完整流程
+- 单独模式（Standalone）：用户精细控制每个 Agent
+- 协调模式（Coordinated）：自动编排完整流程
 
-借鉴来源：melxy1997-ColumnWriter 的 Orchestrator 设计
+设计亮点：
+1. 意图识别 - 关键词匹配（可扩展为 LLM 识别）
+2. 状态机 - IDLE → PLANNING → LEARNING → VALIDATING → COMPLETED
+3. Agent 调度 - 解耦调度层和业务逻辑
 
-TODO (Day 7):
-- 实现完整的双模式逻辑
-- 接入 LangSmith 追踪
-- [可选] 用 LangGraph 重写
+面试话术：
+> "Orchestrator 是整个系统的调度中心。它实现了两种模式：
+>  单独模式适合想精细控制的用户，协调模式自动完成全流程。
+>  核心思想是'谁来做'和'怎么做'分离，调度层只负责路由。"
 """
 
 from typing import Optional, Dict, Any, List
@@ -90,13 +93,55 @@ class Orchestrator:
     
     def set_domain(self, domain: str):
         """设置学习领域"""
+        import re
+        
         self.domain = domain
         self.file_manager = FileManager(domain)
-        self.rag_engine = RAGEngine(collection_name=f"knowledge_{domain}")
+        
+        # 清理 collection 名称（只保留英文、数字、下划线、点、横线）
+        safe_name = re.sub(r'[^a-zA-Z0-9._-]', '', domain.replace(' ', '_'))
+        if not safe_name:
+            safe_name = "default"
+        # 确保不以下划线开头/结尾
+        safe_name = safe_name.strip('_.-')
+        if len(safe_name) < 3:
+            safe_name = "kb" + safe_name
+        
+        self.rag_engine = RAGEngine(collection_name=f"knowledge_{safe_name}")
         self.tutor.set_rag_engine(self.rag_engine)
         
         # 初始化会话状态
         self.session_state = SessionState(domain=domain)
+    
+    def process_file(self, file_content: bytes, filename: str) -> str:
+        """
+        处理上传的文件
+        
+        面试话术：
+        > "process_file 是统一的文件处理入口。不管用户上传 PDF 还是其他文件，
+        >  都会自动识别类型、提取内容、存入 RAG。"
+        
+        Args:
+            file_content: 文件二进制内容
+            filename: 文件名
+            
+        Returns:
+            处理结果描述
+        """
+        from src.specialists.pdf_analyzer import PDFAnalyzer
+        
+        if filename.lower().endswith(".pdf"):
+            analyzer = PDFAnalyzer()
+            pdf_content = analyzer.analyze_from_bytes(file_content, filename)
+            
+            # 导入 RAG
+            if self.rag_engine:
+                analyzer.import_to_rag(pdf_content, self.rag_engine)
+            
+            return f"✅ 已处理 PDF: {pdf_content.title}\n- 共 {pdf_content.total_pages} 页\n- 已导入知识库"
+        else:
+            # 其他文件类型暂不支持
+            return f"⚠️ 暂不支持 {filename} 的文件类型"
     
     def run(
         self,
@@ -178,17 +223,22 @@ class Orchestrator:
         """
         意图识别
         
-        简化版：基于关键词匹配
+        简化版：基于关键词匹配（注意优先级，先检查更具体的）
         TODO: 可以用 LLM 进行更智能的意图识别
+        
+        面试话术：
+        > "意图识别是 Orchestrator 的入口。我用关键词匹配做初版，
+        >  按优先级检查：测验 > 报告 > 创建计划 > 问答。后续可以升级为 LLM 分类。"
         """
         input_lower = user_input.lower()
         
-        if any(kw in input_lower for kw in ["计划", "plan", "学习", "开始"]):
-            return "create_plan"
-        elif any(kw in input_lower for kw in ["测验", "quiz", "测试", "考试"]):
+        # 优先级：测验 > 报告 > 创建计划 > 问答
+        if any(kw in input_lower for kw in ["测验", "quiz", "测试", "考试"]):
             return "start_quiz"
         elif any(kw in input_lower for kw in ["报告", "进度", "report", "progress"]):
             return "get_report"
+        elif any(kw in input_lower for kw in ["计划", "plan", "学习"]):
+            return "create_plan"
         else:
             return "ask_question"
     

@@ -62,11 +62,29 @@ cp .env.example .env
 
 ## 🧪 测试
 
-运行测试：
+我们提供了一套完整的测试套件。在提交代码前，请确保通过所有测试。
+
+### 运行测试
+
+使用 `pytest` 运行测试：
 
 ```bash
+# 运行所有测试
 pytest tests/ -v
+
+# 运行冒烟测试（验证核心功能）
+pytest tests/test_smoke.py -v
 ```
+
+### 测试目录结构
+
+- `tests/test_smoke.py`: 冒烟测试，验证 API 连接和核心骨架
+- `tests/test_providers.py`: Provider 单元测试
+- `tests/test_rag.py`: RAG 模块单元测试
+
+### 编写测试
+
+请确保为新功能编写对应的测试用例。测试文件应放在 `tests/` 目录下，命名以 `test_` 开头。
 
 ## 📄 许可证
 

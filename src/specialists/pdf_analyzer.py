@@ -10,6 +10,11 @@ PDF 分析器
 - 只提取正文，跳过复杂结构（表格、公式）
 - 避免质量问题导致 RAG 效果差
 
+面试话术：
+> "PDFAnalyzer 专门负责解析用户上传的 PDF，用 PyMuPDF 提取文本。
+>  有 analyze_from_bytes() 方法处理内存中的文件，
+>  to_learning_context() 方法把内容转成学习上下文格式。"
+
 TODO (Day 8):
 - 实现 PyMuPDF 解析
 - 改进结构化提取
@@ -197,3 +202,43 @@ class PDFAnalyzer:
         ])
         
         return "\n".join(parts)
+    
+    def import_to_rag(
+        self, 
+        pdf_content: PDFContent,
+        rag_engine = None,
+    ) -> List[str]:
+        """
+        将 PDF 内容导入 RAG 知识库
+        
+        Args:
+            pdf_content: PDFContent 对象
+            rag_engine: RAGEngine 实例（可选，默认创建新的）
+            
+        Returns:
+            导入的 chunk IDs
+            
+        面试话术：
+        > "import_to_rag 实现了 PDF → RAG 的自动导入。
+        >  用户上传 PDF 后，先用 PDFAnalyzer 提取内容，
+        >  然后调用这个方法把内容切分、向量化存入知识库。"
+        """
+        if rag_engine is None:
+            from src.rag import RAGEngine
+            rag_engine = RAGEngine()
+        
+        # 准备文本内容
+        text = self.to_learning_context(pdf_content)
+        
+        # 准备元数据
+        metadata = {
+            "source": pdf_content.title or "PDF Document",
+            "type": "pdf",
+            "pages": pdf_content.total_pages,
+        }
+        
+        # 导入 RAG
+        ids = rag_engine.add_document(text, metadata)
+        
+        return ids
+

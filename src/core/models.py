@@ -2,6 +2,16 @@
 数据模型
 
 定义项目中使用的核心数据结构
+
+设计亮点：
+1. Pydantic BaseModel - 类型校验 + 序列化
+2. 方法封装 - to_markdown() 方便输出
+3. 枚举类型 - 限制取值范围
+
+面试话术：
+> "我用 Pydantic 定义数据模型，好处是自动类型校验、有默认值、
+>  可以一键序列化成 JSON。比如 LearningPlan 可以直接调用
+>  to_markdown() 转成人类可读格式。"
 """
 
 from typing import List, Optional, Dict, Any
@@ -40,6 +50,7 @@ class LearningPlan(BaseModel):
     duration: str                  # 预计总时长
     phases: List[LearningPhase]    # 阶段列表
     prerequisites: List[str] = []  # 前置知识
+    raw_markdown: str = ""         # LLM 生成的原始 Markdown（用于展示）
     created_at: datetime = Field(default_factory=datetime.now)
     
     def to_markdown(self) -> str:

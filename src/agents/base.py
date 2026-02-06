@@ -2,6 +2,16 @@
 Agent 基类
 
 定义所有 Agent 的通用接口和行为
+
+设计亮点：
+1. 抽象基类 (ABC) - 强制子类实现 run() 方法
+2. 依赖注入 - LLM Provider 通过构造函数传入
+3. 类属性定义 - name, system_prompt 由子类覆盖
+
+面试话术：
+> "我用抽象基类定义 Agent 接口，所有 Agent 必须实现 run() 方法。
+>  LLM Provider 通过构造函数注入，方便测试时 Mock。
+>  每个 Agent 有自己的 system_prompt，决定了它的'人设'。"
 """
 
 from abc import ABC, abstractmethod

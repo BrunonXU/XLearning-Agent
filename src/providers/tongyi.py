@@ -12,6 +12,7 @@ Tongyi/Qwen Provider 实现
 
 import os
 from typing import List, Generator, Optional, Dict, Any
+import dashscope
 
 from langchain_community.chat_models import ChatTongyi
 from langchain_community.embeddings import DashScopeEmbeddings
@@ -51,9 +52,17 @@ class TongyiProvider(LLMProvider):
                 "Please set it in .env file or pass it as api_key parameter."
             )
         
+        # 显式设置 dashscope 全局 key，防止 SDK 读取不到
+        dashscope.api_key = self._api_key
+        
+        # 确保环境变量存在
+        if self._api_key:
+            os.environ["DASHSCOPE_API_KEY"] = self._api_key
+
         # 初始化 LangChain ChatTongyi
+        # 注意: LangChain 0.3.x 中建议使用 model_name 参数
         self._llm = ChatTongyi(
-            model=model,
+            model_name=model,
             dashscope_api_key=self._api_key,
             **kwargs
         )

@@ -28,7 +28,7 @@ class LLMResponse(BaseModel):
     """LLM 响应模型"""
     content: str
     model: str
-    usage: Optional[Dict[str, int]] = None  # {"prompt_tokens": x, "completion_tokens": y}
+    usage: Optional[Dict[str, Any]] = None  # Token 使用信息（可能嵌套）
     
 
 class LLMProvider(ABC):

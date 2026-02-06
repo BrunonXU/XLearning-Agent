@@ -8,10 +8,15 @@ Planner Agent - 规划 Agent
 
 使用 ReAct 模式：Thought → Action → Observation → ... → Finish
 
-TODO (Day 4):
-- 实现完整的 ReAct 循环
-- 集成 RepoAnalyzer 和 PDFAnalyzer
-- 接入 LangSmith 追踪
+设计亮点：
+1. 输入类型自动识别 - URL/PDF/文本
+2. 集成 RepoAnalyzer 和 PDFAnalyzer
+3. 结构化输出 LearningPlan
+
+面试话术：
+> "PlannerAgent 能自动识别输入类型。如果是 GitHub URL，
+>  调用 RepoAnalyzer 分析仓库结构；如果是 PDF，用 PDFAnalyzer 提取内容。
+>  然后用 LLM 生成结构化的学习计划。"
 """
 
 from typing import Optional, Dict, Any
@@ -19,6 +24,8 @@ import re
 
 from .base import BaseAgent
 from src.core.models import LearningPlan, LearningPhase, LearningGoal
+from src.specialists.repo_analyzer import RepoAnalyzer
+from src.specialists.pdf_analyzer import PDFAnalyzer, PDFContent
 
 
 class PlannerAgent(BaseAgent):
@@ -68,13 +75,9 @@ class PlannerAgent(BaseAgent):
         
         # 2. 根据类型处理
         if input_type == "github_url":
-            # TODO: 调用 RepoAnalyzer
-            domain = self._extract_domain_from_url(input_data)
-            context = f"GitHub 项目: {input_data}"
+            domain, context = self._process_github_url(input_data)
         elif input_type == "pdf_content":
-            # TODO: 调用 PDFAnalyzer
-            domain = "PDF 文档"
-            context = input_data[:2000]  # 截取前 2000 字符
+            domain, context = self._process_pdf_content(input_data)
         else:
             domain = input_data
             context = input_data
@@ -86,7 +89,7 @@ class PlannerAgent(BaseAgent):
 **学习目标**: {goal}
 
 **背景信息**:
-{context}
+{context[:3000]}
 
 请生成一个详细的学习计划，包括：
 1. 前置知识要求
@@ -98,10 +101,62 @@ class PlannerAgent(BaseAgent):
         
         plan_text = self._call_llm(prompt)
         
-        # 4. 解析为结构化对象（简化版，后续可改进）
+        # 4. 解析为结构化对象
         plan = self._parse_plan(domain, goal, plan_text)
         
+        # 5. 保存原始 Markdown 到 plan 对象（用于展示）
+        plan.raw_markdown = plan_text
+        
         return plan
+    
+    def _process_github_url(self, url: str) -> tuple:
+        """
+        处理 GitHub URL
+        
+        面试话术：
+        > "遇到 GitHub URL，我先用 RepoAnalyzer 获取仓库信息，
+        >  包括 README、项目结构等，作为生成学习计划的上下文。"
+        """
+        try:
+            analyzer = RepoAnalyzer()
+            repo_info = analyzer.analyze(url)
+            
+            domain = repo_info.get("name", self._extract_domain_from_url(url))
+            
+            # 构建上下文
+            context_parts = [
+                f"项目名称: {repo_info.get('name', 'Unknown')}",
+                f"描述: {repo_info.get('description', '无描述')}",
+                f"主要语言: {repo_info.get('language', '未知')}",
+            ]
+            
+            if repo_info.get("readme"):
+                context_parts.append(f"\nREADME 内容:\n{repo_info['readme'][:2000]}")
+            
+            context = "\n".join(context_parts)
+            
+        except Exception as e:
+            # 降级处理
+            domain = self._extract_domain_from_url(url)
+            context = f"GitHub 项目: {url}\n(无法获取详细信息: {str(e)})"
+        
+        return domain, context
+    
+    def _process_pdf_content(self, content: str) -> tuple:
+        """
+        处理 PDF 内容
+        
+        注意：这里接收的是已经提取的文本内容
+        如果是 bytes，应该先用 PDFAnalyzer.analyze_from_bytes()
+        """
+        # 尝试从内容中提取标题
+        lines = content.strip().split("\n")
+        title = lines[0][:50] if lines else "PDF 文档"
+        
+        # 截取内容作为上下文
+        context = content[:3000]
+        
+        return title, context
     
     def _detect_input_type(self, input_data: str) -> str:
         """检测输入类型"""

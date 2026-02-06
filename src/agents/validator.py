@@ -6,10 +6,15 @@ Validator Agent - 验证 Agent
 2. 评估答案正确性
 3. 生成进度报告
 
-TODO (Day 6):
-- 实现更智能的题目生成
-- 实现主观题评分
-- 完善进度报告生成
+设计亮点：
+1. JSON 格式输出 - 让 LLM 生成结构化题目
+2. 自动判分 - 支持选择题评估
+3. 进度追踪 - 统计正确率和薄弱知识点
+
+面试话术：
+> "ValidatorAgent 负责学习效果评估。我用 JSON 格式让 LLM 生成选择题，
+>  自动判分并追踪用户的薄弱知识点。generate_quiz() 可以基于 RAG 内容
+>  生成针对性题目。"
 """
 
 from typing import Optional, List, Dict, Any

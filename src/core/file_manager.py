@@ -5,6 +5,17 @@
 
 借鉴来源：Yixiang-Wu-LearningAgent 的 FileManager
 改进：增加 RAG 集成、更清晰的目录结构
+
+设计亮点：
+1. 按领域分目录 - 隔离不同学习主题的数据
+2. Markdown 格式 - 人类可读，方便检查
+3. get_all_content() - 合并所有内容用于 RAG 导入
+
+面试话术：
+> "FileManager 负责用户数据持久化。我按学习领域分目录，
+>  用 Markdown 存计划和笔记（人类可读），用 JSON 存
+>  会话状态（结构化）。有个 get_all_content() 方法
+>  可以合并所有内容，用于导入 RAG 知识库。"
 """
 
 import os

@@ -8,6 +8,11 @@ Quiz 生成器
 
 这是一个工具类，被 ValidatorAgent 调用
 
+面试话术：
+> "QuizMaker 负责生成测验题，被 ValidatorAgent 调用。
+>  有个 adjust_difficulty() 方法根据用户表现动态调整难度，
+>  表现好就加难度，表现差就降难度。"
+
 TODO:
 - 实现更智能的题目生成
 - 支持更多题型

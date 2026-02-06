@@ -9,7 +9,7 @@ from .base import BaseAgent
 from .planner import PlannerAgent
 from .tutor import TutorAgent
 from .validator import ValidatorAgent
-from .orchestrator import Orchestrator
+from .orchestrator import Orchestrator, OrchestratorMode, OrchestratorState
 
 __all__ = [
     "BaseAgent",
@@ -17,4 +17,7 @@ __all__ = [
     "TutorAgent",
     "ValidatorAgent",
     "Orchestrator",
+    "OrchestratorMode",
+    "OrchestratorState",
 ]
+

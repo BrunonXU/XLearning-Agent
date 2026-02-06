@@ -22,6 +22,7 @@ import os
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
+import dashscope
 from pydantic import BaseModel
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -98,9 +99,16 @@ class RAGEngine:
         """创建 LangChain 兼容的 Embedding 函数"""
         # LangChain Chroma 需要一个有 embed_documents 和 embed_query 方法的对象
         from langchain_community.embeddings import DashScopeEmbeddings
+        
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        
+        # 显式设置全局 API key，确保 SDK 能读取到
+        if api_key:
+            dashscope.api_key = api_key
+        
         return DashScopeEmbeddings(
             model="text-embedding-v2",
-            dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
+            dashscope_api_key=api_key,
         )
     
     def add_document(
@@ -233,3 +241,103 @@ class RAGEngine:
     def count(self) -> int:
         """返回文档数量"""
         return self._vectorstore._collection.count()
+    
+    def query_with_context(
+        self,
+        query: str,
+        k: int = 5,
+        system_prompt: Optional[str] = None,
+    ) -> str:
+        """
+        RAG 问答：检索 + LLM 生成
+        
+        这是 RAG 的核心方法，实现了：
+        1. 从知识库检索相关内容
+        2. 将检索结果作为上下文注入 Prompt
+        3. 调用 LLM 生成回答
+        
+        Args:
+            query: 用户问题
+            k: 检索结果数量
+            system_prompt: 自定义系统提示词
+            
+        Returns:
+            LLM 生成的回答
+            
+        面试话术：
+        > "query_with_context 是 RAG 的核心。先用向量检索找相关内容，
+        >  然后把内容塞进 Prompt 让 LLM 基于这些内容回答。
+        >  这样既利用了 LLM 的推理能力，又保证了回答有据可依。"
+        """
+        from src.providers import ProviderFactory
+        
+        # Step 1: 检索相关内容
+        context = self.build_context(query, k=k)
+        
+        # Step 2: 构建 Prompt
+        if not system_prompt:
+            system_prompt = """你是一个智能学习助手。请基于以下参考资料回答用户的问题。
+
+如果参考资料中没有相关信息，请如实告知，不要编造。
+回答时请引用资料来源。"""
+
+        if context:
+            full_prompt = f"""{system_prompt}
+
+## 参考资料
+
+{context}
+
+## 用户问题
+
+{query}
+
+请基于以上参考资料回答问题："""
+        else:
+            full_prompt = f"""{system_prompt}
+
+（注意：知识库中没有找到相关内容，请基于你的通用知识回答）
+
+用户问题：{query}"""
+
+        # Step 3: 调用 LLM
+        from src.providers.base import Message
+        llm = ProviderFactory.create_llm()
+        
+        messages = [
+            Message(role="user", content=full_prompt)
+        ]
+        
+        response = llm.chat(messages)
+        return response.content
+    
+    def search(
+        self,
+        query: str,
+        k: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        简化版检索接口，返回字典列表
+        
+        用于 UI 展示检索结果
+        """
+        results = self.retrieve(query, k=k)
+        return [
+            {
+                "content": r.content,
+                "source": r.metadata.get("source", "未知"),
+                "score": r.score,
+            }
+            for r in results
+        ]
+    
+    def clear(self):
+        """清空知识库"""
+        self.delete_collection()
+        # 重新创建
+        self._vectorstore = Chroma(
+            collection_name=self.collection_name,
+            embedding_function=self._create_langchain_embedding(),
+            persist_directory=self.persist_directory,
+        )
+

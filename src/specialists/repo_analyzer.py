@@ -10,6 +10,11 @@ GitHub 仓库分析器
 - 只读 README + requirements，不做代码遍历
 - 避免范围失控
 
+面试话术：
+> "RepoAnalyzer 作为 Specialist，专门处理 GitHub 仓库解析。
+>  只读 README 和 requirements，风险可控。
+>  分析结果通过 to_learning_context() 转成 Planner 能理解的格式。"
+
 TODO (Day 9):
 - 实现 GitHub API 调用
 - 提取更多仓库信息
