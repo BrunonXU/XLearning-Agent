@@ -1,0 +1,27 @@
+{
+  "messages": [
+    {
+      "id": "msg_7440c3",
+      "role": "user",
+      "agent": null,
+      "content": "请帮我创建一个学习计划",
+      "status": "complete",
+      "parent_step_id": null,
+      "error": null,
+      "citations": [],
+      "ts": "2026-02-07T02:34:35.976616"
+    }
+  ],
+  "trace": [],
+  "quiz": {
+    "questions": [],
+    "answers": {},
+    "wrong_questions": [],
+    "score": null
+  },
+  "report": {
+    "generated": false,
+    "content": "",
+    "ts": null
+  }
+}

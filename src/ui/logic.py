@@ -26,10 +26,13 @@ def get_orchestrator() -> Orchestrator:
         _ORCHESTRATOR = Orchestrator(mode=mode)
     return _ORCHESTRATOR
 
-def handle_chat_input(user_input: str) -> None:
+def handle_chat_input(user_input: str, should_rerun: bool = True) -> None:
     """
     Process user input via Orchestrator.
     This function should be called from the UI thread.
+    Args:
+        user_input: The text to process.
+        should_rerun: Whether to trigger a rerun at the end (set False if inside a callback).
     """
     if not user_input.strip():
         return
@@ -50,8 +53,6 @@ def handle_chat_input(user_input: str) -> None:
         orchestrator.switch_mode(current_mode)
 
     # 3. Create a placeholder for streaming response
-    # In legacy UI, we might need to add a temporary message or use st.empty()
-    # For now, we'll create a "pending" message and update it
     msg_id = add_message(
         role="assistant", 
         content="Thinking...", 
@@ -60,10 +61,34 @@ def handle_chat_input(user_input: str) -> None:
     )
     
     try:
-        # 4. Run Orchestrator (Blocking Call for now, TODO: Make async/streaming)
-        # Since the backend is synchronous, we simulate streaming or just wait
+        # 4. Run Orchestrator with MOCK TRACE SIMULATION
         add_trace_event("orch_start", "progress", "Orchestrator Started")
         
+        # --- SIMULATION START ---
+        import uuid
+        import time
+        import random
+        
+        # Step 1: Planning
+        step1 = "step_" + uuid.uuid4().hex[:4]
+        add_trace_event(step1, "tool_start", "PlannerAgent", "Analyzing user intent...")
+        time.sleep(0.8)
+        add_trace_event(step1, "tool_end", "PlannerAgent", "Intent detected: Knowledge Acquisition")
+        
+        # Step 2: Retrieval
+        step2 = "step_" + uuid.uuid4().hex[:4]
+        add_trace_event(step2, "tool_start", "TutorAgent", "Searching Knowledge Base...")
+        time.sleep(1.2)
+        add_trace_event(step2, "tool_end", "TutorAgent", f"Retrieved {random.randint(2,5)} relevant chunks")
+        
+        # Step 3: Verification (Optional random)
+        if random.random() > 0.5:
+            step3 = "step_" + uuid.uuid4().hex[:4]
+            add_trace_event(step3, "tool_start", "ValidatorAgent", "Fact-checking response...")
+            time.sleep(0.6)
+            add_trace_event(step3, "tool_end", "ValidatorAgent", "Confidence Score: 0.95")
+        # --- SIMULATION END ---
+
         response = orchestrator.run(user_input)
         
         # 5. Update complete message
@@ -96,7 +121,9 @@ def handle_chat_input(user_input: str) -> None:
         st.session_state.is_processing = False
         from src.ui.state import save_session_data
         save_session_data(st.session_state.current_session_id, st.session_state.current_session)
-        st.experimental_rerun()
+        
+        if should_rerun:
+            st.experimental_rerun()
 
 def handle_file_upload(file) -> None:
     """Handle PDF upload via Orchestrator."""
@@ -114,3 +141,54 @@ def handle_file_upload(file) -> None:
     except Exception as e:
         set_kb_status("error", error=str(e))
         st.error(f"Upload failed: {e}")
+
+def handle_generate_quiz() -> None:
+    """Generate a mock quiz for demonstration."""
+    from src.ui.state import save_session_data
+    
+    # Mock Quiz Data
+    mock_questions = [
+        {
+            "qid": "q1",
+            "question": "Python 中用于定义函数的关键字是？",
+            "choices": ["func", "def", "function", "define"],
+            "answer_index": 1,
+            "explanation": "在 Python 中，使用 `def` 关键字来定义函数。"
+        },
+        {
+            "qid": "q2",
+            "question": "以下哪个数据结构是不可变的？",
+            "choices": ["List", "Dictionary", "Tuple", "Set"],
+            "answer_index": 2,
+            "explanation": "Tuple（元组）一旦创建就不能修改，是不可变序列。"
+        },
+        {
+            "qid": "q3",
+            "question": "如何获取列表 `my_list` 的长度？",
+            "choices": ["my_list.length()", "length(my_list)", "len(my_list)", "my_list.size()"],
+            "answer_index": 2,
+            "explanation": "内置函数 `len()` 用于获取序列（如列表、字符串）的长度。"
+        },
+        {
+            "qid": "q4",
+            "question": "RAG 系统中的 'R' 代表什么？",
+            "choices": ["Read", "Retrieve", "Reason", "Rank"],
+            "answer_index": 1,
+            "explanation": "RAG 代表 Retrieval-Augmented Generation（检索增强生成）。"
+        },
+        {
+            "qid": "q5",
+            "question": "Streamlit 的主要用途是什么？",
+            "choices": ["游戏开发", "Web 应用快速开发", "嵌入式系统", "移动应用"],
+            "answer_index": 1,
+            "explanation": "Streamlit 是一个开源 Python 库，用于快速构建和共享数据 Web 应用。"
+        }
+    ]
+    
+    if st.session_state.current_session:
+        st.session_state.current_session["quiz"]["questions"] = mock_questions
+        st.session_state.current_session["quiz"]["score"] = None
+        st.session_state.current_session["quiz"]["wrong_questions"] = []
+        
+        save_session_data(st.session_state.current_session_id, st.session_state.current_session)
+        st.experimental_rerun()

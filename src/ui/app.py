@@ -7,7 +7,7 @@ Initializes state, styles, layout, and renderer.
 import streamlit as st
 from src.ui.state import init_session_state, t
 from src.ui.styles import inject_styles
-from src.ui.layout import render_sidebar, render_main_tabs
+from src.ui.layout import render_sidebar, render_main_area
 
 def main():
     # 1. Page Config
@@ -26,7 +26,7 @@ def main():
     
     # 4. Render Layout
     render_sidebar()
-    render_main_tabs()
+    render_main_area()
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,15 @@
+{
+  "messages": [],
+  "trace": [],
+  "quiz": {
+    "questions": [],
+    "answers": {},
+    "wrong_questions": [],
+    "score": null
+  },
+  "report": {
+    "generated": false,
+    "content": "",
+    "ts": null
+  }
+}

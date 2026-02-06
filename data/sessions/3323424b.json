@@ -1,0 +1,76 @@
+{
+  "messages": [],
+  "trace": [],
+  "quiz": {
+    "questions": [
+      {
+        "qid": "q1",
+        "question": "Python 中用于定义函数的关键字是？",
+        "choices": [
+          "func",
+          "def",
+          "function",
+          "define"
+        ],
+        "answer_index": 1,
+        "explanation": "在 Python 中，使用 `def` 关键字来定义函数。"
+      },
+      {
+        "qid": "q2",
+        "question": "以下哪个数据结构是不可变的？",
+        "choices": [
+          "List",
+          "Dictionary",
+          "Tuple",
+          "Set"
+        ],
+        "answer_index": 2,
+        "explanation": "Tuple（元组）一旦创建就不能修改，是不可变序列。"
+      },
+      {
+        "qid": "q3",
+        "question": "如何获取列表 `my_list` 的长度？",
+        "choices": [
+          "my_list.length()",
+          "length(my_list)",
+          "len(my_list)",
+          "my_list.size()"
+        ],
+        "answer_index": 2,
+        "explanation": "内置函数 `len()` 用于获取序列（如列表、字符串）的长度。"
+      },
+      {
+        "qid": "q4",
+        "question": "RAG 系统中的 'R' 代表什么？",
+        "choices": [
+          "Read",
+          "Retrieve",
+          "Reason",
+          "Rank"
+        ],
+        "answer_index": 1,
+        "explanation": "RAG 代表 Retrieval-Augmented Generation（检索增强生成）。"
+      },
+      {
+        "qid": "q5",
+        "question": "Streamlit 的主要用途是什么？",
+        "choices": [
+          "游戏开发",
+          "Web 应用快速开发",
+          "嵌入式系统",
+          "移动应用"
+        ],
+        "answer_index": 1,
+        "explanation": "Streamlit 是一个开源 Python 库，用于快速构建和共享数据 Web 应用。"
+      }
+    ],
+    "answers": {},
+    "wrong_questions": [],
+    "score": null
+  },
+  "report": {
+    "generated": false,
+    "content": "",
+    "ts": null
+  }
+}

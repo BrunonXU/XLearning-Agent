@@ -46,39 +46,54 @@ def get_css() -> str:
         color: #000;
     }
     
-    /* Legacy Chat Message Styles (1.12.0) */
+    /* Legacy Chat Message Styles */
     .chat-row {
         display: flex;
-        margin-bottom: 20px;
+        margin-bottom: 24px;
         align-items: flex-start;
     }
     .chat-bubble {
-        padding: 12px 16px;
-        border-radius: 12px;
-        background-color: #F4F3EF;
-        color: var(--text-primary);
-        max-width: 85%;
+        padding: 16px 20px;
+        border-radius: 18px;
+        background-color: #FFFFFF;
+        color: #1a1a1a;
+        max-width: 80%;
         line-height: 1.6;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-    }
-    .assistant-bubble {
-        background-color: transparent;
-        border: 1px solid #E6E4DD;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.02);
+        font-size: 16px;
     }
     .user-bubble {
-        background-color: #F4F3EF;
+        background-color: #F3F4F6; /* Light Gray for User */
+        border-top-right-radius: 4px;
+    }
+    .assistant-bubble {
+        background-color: #FFFFFF;
+        border: 1px solid #E5E7EB;
+        border-top-left-radius: 4px;
     }
     .avatar-icon {
-        font-size: 1.5rem;
-        margin-right: 15px;
-        margin-top: 5px;
-        min-width: 40px;
-        text-align: center;
+        font-size: 24px;
+        margin-right: 16px;
+        margin-top: 4px;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #F9FAFB;
+        border-radius: 50%;
+        border: 1px solid #E5E7EB;
     }
     
-    /* Hide radio labels in Quiz */
+    /* Quiz & Radio */
     div[data-testid="stRadio"] > label {
         display: none;
+    }
+    
+    /* Input Area Polish */
+    div[data-testid="stForm"] {
+        border: none;
+        padding: 0;
     }
     </style>
     """

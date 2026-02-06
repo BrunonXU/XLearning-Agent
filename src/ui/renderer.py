@@ -2,6 +2,7 @@
 XLearning Agent - UI Renderer
 ==============================
 Handles: Chat Tab, Trace Tab, Quiz Tab, Report Tab rendering
+Strictly compatible with Streamlit 1.12.0.
 """
 
 import streamlit as st
@@ -23,12 +24,6 @@ AGENT_AVATARS = {
     "validator": "✅"
 }
 
-AGENT_COLORS = {
-    "planner": "blue",
-    "tutor": "green",
-    "validator": "orange"
-}
-
 # ============================================================================
 # Chat Tab
 # ============================================================================
@@ -38,17 +33,17 @@ def render_chat_tab():
     
     # Check if we have a session
     if not st.session_state.current_session_id:
-        from src.ui.layout import render_welcome_panel
-        render_welcome_panel()
+        from src.ui.layout import render_home_view
+        render_home_view()
         return
     
     messages = get_current_messages()
     
     # ===== Empty Session State =====
     if not messages:
-        from src.ui.layout import render_welcome_panel
-        render_welcome_panel()
-        # Still show chat input below
+        # If active session but no messages, show Home View or a Welcome Helper
+        # Usually implies new session
+        pass 
     else:
         # ===== Message Rendering with Folding =====
         total = len(messages)
@@ -116,31 +111,82 @@ def _render_message(msg: dict):
                 st.caption(f"_{snippet}_")
 
 def _render_chat_input():
-    """Render chat input using legacy st.form (Compatible with 1.12.0)."""
+    """Render the chat input area at the bottom."""
     
     # Show stop button during processing
     if st.session_state.is_processing:
         if st.button(t("stop"), key="stop_btn"):
             st.session_state.stop_requested = True
             st.experimental_rerun()
-    
-    # Legacy Chat Form
-    with st.form("chat_input_form", clear_on_submit=True):
-        cols = st.columns([0.9, 0.1])
-        with cols[0]:
-            prompt = st.text_input(
-                "Message",
-                placeholder=t("chat_placeholder"),
-                key="chat_input_text",
-                label_visibility="collapsed" if st.session_state.get("lang") else "hidden"
-            )
-        with cols[1]:
-            submitted = st.form_submit_button("↑")
             
-        if submitted and prompt:
-            from src.ui.logic import handle_chat_input
-            handle_chat_input(prompt)
+    st.markdown("---")
 
+    # Callback to handle input submission
+    def on_input_change():
+        user_input = st.session_state.chat_input_val
+        if user_input.strip():
+            from src.ui.logic import handle_chat_input
+            handle_chat_input(user_input, should_rerun=False)
+            # Clear input
+            st.session_state.chat_input_val = ""
+
+    # Ensure session state key exists
+    if "chat_input_val" not in st.session_state:
+        st.session_state.chat_input_val = ""
+    
+    # Use standard text_input with on_change for "Enter to Submit" support
+    st.text_input(
+        label="Message",
+        placeholder=t("chat_placeholder"), 
+        value="", 
+        key="chat_input_val",
+        on_change=on_input_change,
+        # label_visibility="collapsed" # Removed for 1.12.0 compat
+    )
+    
+    st.caption("Tip: Press Enter to send. (Streamlit 1.12.0 Compatible)")
+
+
+# ============================================================================
+# Brain Tab (Knowledge & Artifacts)
+# ============================================================================
+
+def render_brain_tab():
+    """Render the Brain tab: Uploaded Files & Generated Artifacts."""
+    
+    if not st.session_state.current_session:
+        st.info("请先开始一个学习会话。")
+        return
+
+    st.markdown("### 🧠 记忆与知识 (Brain)")
+    
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("#### 📄 上传的上下文 (Context)")
+        kb_info = st.session_state.kb_info
+        if kb_info.get("source"):
+            st.success(f"**{kb_info['source']}**")
+            st.caption(f"Status: {st.session_state.kb_status} | Chunks: {kb_info.get('count', 0)}")
+            st.caption(f"Indexed at: {kb_info.get('ts', 'N/A')}")
+        else:
+            st.info("当前会话未关联 PDF/URL。")
+            
+    with c2:
+        st.markdown("#### 📦 生成的产物 (Artifacts)")
+        # Check for report
+        report = st.session_state.current_session.get("report", {})
+        if report.get("generated"):
+            st.markdown(f"**📊 学习报告**")
+            st.download_button(
+                label="📥 下载 Markdown",
+                data=report.get("content", ""),
+                file_name="report.md",
+                mime="text/markdown",
+                key="brain_dl_report"
+            )
+        else:
+            st.info("暂无生成产物。")
 
 # ============================================================================
 # Trace Tab
@@ -228,8 +274,8 @@ def render_quiz_tab():
     if not questions:
         st.markdown("### 🎓 准备好测试你的学习成果了吗？")
         if st.button("生成测验", key="generate_quiz"):
-            # TODO: Call quiz generator
-            st.info("生成测验功能即将上线...")
+            from src.ui.logic import handle_generate_quiz
+            handle_generate_quiz()
         return
     
     # Quiz in progress or completed
@@ -271,7 +317,7 @@ def render_quiz_tab():
             if is_wrong and explanation:
                 st.caption(f"💡 {explanation}")
         
-        st.divider()
+        st.markdown("---")
     
     # Submit or Score display
     if score is None:

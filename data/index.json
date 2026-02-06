@@ -1,5 +1,157 @@
 [
   {
+    "id": "44525a33",
+    "title": "📄 OpenVLA-2406.09246v3.pdf",
+    "created_at": "2026-02-07T03:11:23.450909",
+    "updated_at": "2026-02-07T03:33:27.813926",
+    "kb_summary": null,
+    "last_preview": "Thinking..."
+  },
+  {
+    "id": "a0563f0b",
+    "title": "New Chat",
+    "created_at": "2026-02-07T03:10:48.647039",
+    "updated_at": "2026-02-07T03:10:48.647039",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "31a49346",
+    "title": "New Chat",
+    "created_at": "2026-02-07T03:09:25.065986",
+    "updated_at": "2026-02-07T03:09:25.065986",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "2cc8cef1",
+    "title": "New Chat",
+    "created_at": "2026-02-07T03:09:24.862276",
+    "updated_at": "2026-02-07T03:09:24.862276",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "b5993419",
+    "title": "New Chat",
+    "created_at": "2026-02-07T03:09:24.510846",
+    "updated_at": "2026-02-07T03:09:24.510846",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "67785d90",
+    "title": "New Chat",
+    "created_at": "2026-02-07T03:09:21.272669",
+    "updated_at": "2026-02-07T03:09:21.272669",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "3323424b",
+    "title": "New Chat",
+    "created_at": "2026-02-07T03:09:03.096690",
+    "updated_at": "2026-02-07T03:09:03.096690",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "1a34719b",
+    "title": "New Chat",
+    "created_at": "2026-02-07T03:09:01.825296",
+    "updated_at": "2026-02-07T03:09:01.825296",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "653ca776",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:50:29.975087",
+    "updated_at": "2026-02-07T02:50:29.975087",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "99ab71d4",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:50:27.576388",
+    "updated_at": "2026-02-07T02:50:27.576388",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "44bfe798",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:49:31.264144",
+    "updated_at": "2026-02-07T02:49:31.264144",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "f8c9fd95",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:49:03.891213",
+    "updated_at": "2026-02-07T03:33:49.304857",
+    "kb_summary": null,
+    "last_preview": "Thinking..."
+  },
+  {
+    "id": "39ca8e0c",
+    "title": "🎓 创建学习计划",
+    "created_at": "2026-02-07T02:40:29.828215",
+    "updated_at": "2026-02-07T02:40:29.833924",
+    "kb_summary": null,
+    "last_preview": "请帮我创建一个学习计划"
+  },
+  {
+    "id": "2099a131",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:40:29.415043",
+    "updated_at": "2026-02-07T02:40:29.415043",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "520c3592",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:40:26.039042",
+    "updated_at": "2026-02-07T02:40:26.039042",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "898d69a9",
+    "title": "🎓 创建学习计划",
+    "created_at": "2026-02-07T02:40:04.881311",
+    "updated_at": "2026-02-07T02:40:04.994012",
+    "kb_summary": null,
+    "last_preview": "✅ 已处理 PDF: 徐子昂\n- 共 2 页\n- 已导入知识库"
+  },
+  {
+    "id": "ba746b99",
+    "title": "🎓 创建学习计划",
+    "created_at": "2026-02-07T02:34:35.973104",
+    "updated_at": "2026-02-07T02:34:35.976616",
+    "kb_summary": null,
+    "last_preview": "请帮我创建一个学习计划"
+  },
+  {
+    "id": "272fecca",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:32:17.050974",
+    "updated_at": "2026-02-07T02:32:17.050974",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
+    "id": "1de875e3",
+    "title": "New Chat",
+    "created_at": "2026-02-07T02:32:16.164269",
+    "updated_at": "2026-02-07T02:32:16.164269",
+    "kb_summary": null,
+    "last_preview": ""
+  },
+  {
     "id": "5e0079d2",
     "title": "New Chat",
     "created_at": "2026-02-07T02:18:46.647786",

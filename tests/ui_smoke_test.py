@@ -61,7 +61,7 @@ import src.ui.renderer as renderer
 st.title("🧪 UI Smoke Test")
 st.markdown("Rendering all components to check for TypeErrors or Layout issues.")
 
-st.divider()
+st.markdown("---")
 
 st.header("1. Sidebar")
 try:
@@ -70,16 +70,33 @@ try:
 except Exception as e:
     st.error(f"❌ Sidebar Failed: {e}")
 
-st.divider()
+st.markdown("---")
 
-st.header("2. Welcome Panel")
+st.header("2. Home View (New)")
 try:
-    layout.render_welcome_panel()
-    st.success("✅ Welcome Panel Rendered")
+    # layout.render_home_view() # Commented out to avoid Duplicate Key with Main Area test
+    st.info("✅ Home View tested via Main Area below")
+    st.success("✅ Home View Skipped (Duplicate Key Prevention)")
 except Exception as e:
-    st.error(f"❌ Welcome Panel Failed: {e}")
+    st.error(f"❌ Home View Failed: {e}")
 
-st.divider()
+st.markdown("---")
+
+st.header("3. Main Area Controller")
+try:
+    # Set mock session to None to test Home View routing
+    st.session_state.current_session_id = None
+    layout.render_main_area()
+    st.success("✅ Main Area (Home) Rendered")
+    
+    # Set mock session to Active to test Workspace routing
+    st.session_state.current_session_id = "test_session"
+    layout.render_workspace_view()
+    st.success("✅ Workspace View Rendered")
+except Exception as e:
+    st.error(f"❌ Main Area Failed: {e}")
+
+st.markdown("---")
 
 st.header("3. Chat Tab")
 try:
@@ -88,7 +105,7 @@ try:
 except Exception as e:
     st.error(f"❌ Chat Tab Failed: {e}")
 
-st.divider()
+st.markdown("---")
 
 st.header("4. Trace Tab")
 try:
@@ -97,7 +114,16 @@ try:
 except Exception as e:
     st.error(f"❌ Trace Tab Failed: {e}")
 
-st.divider()
+st.markdown("---")
+
+st.header("5. Brain Tab")
+try:
+    renderer.render_brain_tab()
+    st.success("✅ Brain Tab Rendered")
+except Exception as e:
+    st.error(f"❌ Brain Tab Failed: {e}")
+
+st.markdown("---")
 
 st.header("5. Quiz Tab")
 try:

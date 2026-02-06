@@ -1,0 +1,38 @@
+{
+  "messages": [
+    {
+      "id": "msg_a85b4c",
+      "role": "user",
+      "agent": null,
+      "content": "请帮我创建一个学习计划",
+      "status": "complete",
+      "parent_step_id": null,
+      "error": null,
+      "citations": [],
+      "ts": "2026-02-07T02:40:04.886335"
+    },
+    {
+      "id": "msg_d0126f",
+      "role": "system",
+      "agent": "validator",
+      "content": "✅ 已处理 PDF: 徐子昂\n- 共 2 页\n- 已导入知识库",
+      "status": "complete",
+      "parent_step_id": null,
+      "error": null,
+      "citations": [],
+      "ts": "2026-02-07T02:40:04.994012"
+    }
+  ],
+  "trace": [],
+  "quiz": {
+    "questions": [],
+    "answers": {},
+    "wrong_questions": [],
+    "score": null
+  },
+  "report": {
+    "generated": false,
+    "content": "",
+    "ts": null
+  }
+}

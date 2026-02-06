@@ -108,11 +108,46 @@ def t(key: str) -> str:
 # ============================================================================
 
 def _atomic_write(path: Path, data: Any) -> None:
-    """Write JSON atomically: tmp file -> rename."""
-    tmp_path = path.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, path)
+    """
+    Write JSON atomically: tmp file -> rename.
+    Includes retry logic for Windows file locking ([WinError 5]).
+    """
+    tmp_path = path.with_suffix(f".{uuid.uuid4().hex[:6]}.tmp")
+    try:
+        # 1. Write to temp file
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            
+        # 2. Retry rename loop (Windows anti-virus/indexer often locks files briefly)
+        max_retries = 5
+        for i in range(max_retries):
+            try:
+                if path.exists():
+                    os.replace(tmp_path, path)
+                else:
+                    os.rename(tmp_path, path)
+                return
+            except OSError:
+                if i == max_retries - 1:
+                    raise
+                import time
+                time.sleep(0.1)
+                
+    except Exception as e:
+        # Fallback: Direct write if atomic fails (risky but better than crashing)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            print(f"Failed to save {path}: {e}")
+            pass
+    finally:
+        # Cleanup temp
+        if tmp_path.exists():
+            try:
+                os.remove(tmp_path)
+            except:
+                pass
 
 def _read_json(path: Path, default: Any = None) -> Any:
     """Read JSON file, return default if not exists."""
@@ -249,7 +284,8 @@ def get_current_messages() -> List[Dict]:
     return []
 
 def add_message(role: str, content: str, agent: str = None, 
-                citations: List = None, parent_step_id: str = None) -> str:
+                citations: List = None, parent_step_id: str = None,
+                status: str = "complete") -> str:
     """Add a message to the current session."""
     if not st.session_state.current_session:
         return None
@@ -260,7 +296,7 @@ def add_message(role: str, content: str, agent: str = None,
         "role": role,
         "agent": agent,
         "content": content,
-        "status": "complete",
+        "status": status,
         "parent_step_id": parent_step_id,
         "error": None,
         "citations": citations or [],
