@@ -41,6 +41,7 @@ class BaseAgent(ABC):
         self,
         llm_provider: Optional[LLMProvider] = None,
         config: Optional[Config] = None,
+        on_event: Optional[Any] = None,
     ):
         """
         初始化 Agent
@@ -48,9 +49,16 @@ class BaseAgent(ABC):
         Args:
             llm_provider: LLM Provider，默认使用工厂创建
             config: 配置对象
+            on_event: 事件回调函数 (event_type, name, detail)
         """
         self.config = config or Config.get()
         self.llm = llm_provider or ProviderFactory.create_llm()
+        self.on_event = on_event
+
+    def _emit_event(self, event_type: str, name: str, detail: str = ""):
+        """发射追踪事件"""
+        if self.on_event:
+            self.on_event(event_type, name, detail)
     
     @abstractmethod
     def run(self, input_data: Any, **kwargs) -> Any:

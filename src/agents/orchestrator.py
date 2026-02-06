@@ -65,6 +65,7 @@ class Orchestrator:
         self,
         mode: OrchestratorMode = OrchestratorMode.STANDALONE,
         domain: Optional[str] = None,
+        on_event: Optional[Any] = None,
     ):
         """
         初始化协调器
@@ -72,15 +73,17 @@ class Orchestrator:
         Args:
             mode: 运行模式
             domain: 学习领域
+            on_event: 事件回调 (event_type, name, detail)
         """
         self.mode = mode
         self.domain = domain
         self.state = OrchestratorState.IDLE
+        self.on_event = on_event
         
-        # 初始化 Agents
-        self.planner = PlannerAgent()
-        self.tutor = TutorAgent()
-        self.validator = ValidatorAgent()
+        # 初始化 Agents 并注入回调
+        self.planner = PlannerAgent(on_event=on_event)
+        self.tutor = TutorAgent(on_event=on_event)
+        self.validator = ValidatorAgent(on_event=on_event)
         
         # 文件管理器（领域确定后初始化）
         self.file_manager: Optional[FileManager] = None
@@ -113,6 +116,11 @@ class Orchestrator:
         # 初始化会话状态
         self.session_state = SessionState(domain=domain)
     
+    def _emit_event(self, event_type: str, name: str, detail: str = ""):
+        """发射追踪事件"""
+        if self.on_event:
+            self.on_event(event_type, name, detail)
+
     def process_file(self, file_content: bytes, filename: str) -> str:
         """
         处理上传的文件
@@ -130,6 +138,8 @@ class Orchestrator:
         """
         from src.specialists.pdf_analyzer import PDFAnalyzer
         
+        self._emit_event("tool_start", "FileProcessor", f"Analyzing {filename}...")
+        
         if filename.lower().endswith(".pdf"):
             analyzer = PDFAnalyzer()
             pdf_content = analyzer.analyze_from_bytes(file_content, filename)
@@ -138,11 +148,13 @@ class Orchestrator:
             if self.rag_engine:
                 analyzer.import_to_rag(pdf_content, self.rag_engine)
             
+            self._emit_event("tool_end", "FileProcessor", f"Successfully indexed {pdf_content.title}")
             return f"✅ 已处理 PDF: {pdf_content.title}\n- 共 {pdf_content.total_pages} 页\n- 已导入知识库"
         else:
+            self._emit_event("tool_end", "FileProcessor", f"Unsupported file type: {filename}")
             # 其他文件类型暂不支持
             return f"⚠️ 暂不支持 {filename} 的文件类型"
-    
+
     def run(
         self,
         user_input: str,
@@ -150,24 +162,19 @@ class Orchestrator:
     ) -> str:
         """
         处理用户输入
-        
-        Args:
-            user_input: 用户输入
-            **kwargs: 其他参数
-            
-        Returns:
-            响应内容
         """
+        self._emit_event("progress", "Orchestrator", f"Starting in {self.mode} mode")
         if self.mode == OrchestratorMode.COORDINATED:
             return self._run_coordinated(user_input, **kwargs)
         else:
             return self._run_standalone(user_input, **kwargs)
-    
+
     def _run_standalone(self, user_input: str, **kwargs) -> str:
         """
         单独模式：根据意图调用对应 Agent
         """
         intent = self._detect_intent(user_input)
+        self._emit_event("progress", "IntentDetection", f"Detected Intent: {intent}")
         
         if intent == "create_plan":
             return self._handle_create_plan(user_input)

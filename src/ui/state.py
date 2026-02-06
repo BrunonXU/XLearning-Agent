@@ -201,6 +201,8 @@ def init_session_state() -> None:
         st.session_state.mode = "standalone"
     if "current_session_id" not in st.session_state:
         st.session_state.current_session_id = None
+    if "active_tab" not in st.session_state:
+        st.session_state.active_tab = "对话" # Default to translated Chat tab name
     
     # KB State Machine
     if "kb_status" not in st.session_state:
@@ -332,6 +334,13 @@ def add_trace_event(step_id: str, event_type: str, name: str, detail: str = None
     }
     
     st.session_state.current_session["trace"].append(event)
+    save_session_data(st.session_state.current_session_id, st.session_state.current_session)
+
+def clear_session_trace() -> None:
+    """Clear all trace events for the current session."""
+    if not st.session_state.current_session:
+        return
+    st.session_state.current_session["trace"] = []
     save_session_data(st.session_state.current_session_id, st.session_state.current_session)
 
 # ============================================================================

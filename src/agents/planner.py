@@ -70,17 +70,23 @@ class PlannerAgent(BaseAgent):
         Returns:
             LearningPlan 对象
         """
+        self._emit_event("tool_start", self.name, f"Detecting input type for: {input_data[:50]}...")
+        
         # 1. 识别输入类型
         input_type = self._detect_input_type(input_data)
+        self._emit_event("progress", self.name, f"Input detected as: {input_type}")
         
         # 2. 根据类型处理
         if input_type == "github_url":
+            self._emit_event("progress", self.name, "Analyzing GitHub repository...")
             domain, context = self._process_github_url(input_data)
         elif input_type == "pdf_content":
+            self._emit_event("progress", self.name, "Processing PDF content...")
             domain, context = self._process_pdf_content(input_data)
         else:
             domain = input_data
             context = input_data
+            self._emit_event("progress", self.name, "Processing text description...")
         
         # 3. 生成计划
         prompt = f"""请为以下学习内容制定学习计划：
@@ -99,6 +105,7 @@ class PlannerAgent(BaseAgent):
 
 用 Markdown 格式输出。"""
         
+        self._emit_event("progress", self.name, "Generating structured learning plan via LLM...")
         plan_text = self._call_llm(prompt)
         
         # 4. 解析为结构化对象
@@ -107,6 +114,7 @@ class PlannerAgent(BaseAgent):
         # 5. 保存原始 Markdown 到 plan 对象（用于展示）
         plan.raw_markdown = plan_text
         
+        self._emit_event("tool_end", self.name, f"Plan generated for {domain}")
         return plan
     
     def _process_github_url(self, url: str) -> tuple:

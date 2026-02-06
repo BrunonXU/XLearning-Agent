@@ -101,16 +101,8 @@ class ValidatorAgent(BaseAgent):
     ) -> Quiz:
         """
         生成测验
-        
-        Args:
-            topic: 测验主题
-            content: 参考内容（来自 RAG 或学习资料）
-            num_questions: 题目数量
-            difficulty: 难度 0-1
-            
-        Returns:
-            Quiz 对象
         """
+        self._emit_event("tool_start", self.name, f"Generating quiz for topic: {topic}")
         difficulty_desc = "简单" if difficulty < 0.3 else "中等" if difficulty < 0.7 else "困难"
         
         prompt = f"""请根据以下内容生成 {num_questions} 道选择题：
@@ -136,19 +128,46 @@ class ValidatorAgent(BaseAgent):
 
 只输出 JSON，不要其他内容。"""
         
+        self._emit_event("progress", self.name, "Requesting structured JSON quiz from LLM...")
         response = self._call_llm(prompt)
         
         # 解析 JSON（简化处理，实际应更健壮）
+        self._emit_event("progress", self.name, "Parsing quiz items...")
         questions = self._parse_questions(response)
         
+        self._emit_event("tool_end", self.name, f"Quiz generated successfully with {len(questions)} questions")
         return Quiz(
             domain=topic,
             topic=topic,
             questions=questions,
             difficulty=difficulty,
         )
-    
-    def _parse_questions(self, response: str) -> List[Question]:
+
+    def evaluate_answers(
+        self,
+        quiz: Quiz,
+        answers: List[int],
+    ) -> QuizResult:
+        """
+        评估测验答案
+        """
+        self._emit_event("tool_start", self.name, "Evaluating quiz answers...")
+        correct_count = 0
+        wrong_topics = []
+        
+        for i, (question, answer) in enumerate(zip(quiz.questions, answers)):
+            correct_idx = question.answer_index if hasattr(question, "answer_index") else 0
+            if answer == correct_idx:
+                correct_count += 1
+            else:
+                if question.topic:
+                    wrong_topics.append(question.topic)
+        
+        total = len(quiz.questions)
+        accuracy = correct_count / total if total > 0 else 0
+        self._emit_event("tool_end", self.name, f"Evaluation complete. Accuracy: {accuracy:.1%}")
+        
+        # ... rest of method logic ...
         """解析 LLM 返回的题目 JSON"""
         import json
         import re

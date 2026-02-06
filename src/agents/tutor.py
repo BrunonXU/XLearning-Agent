@@ -95,7 +95,10 @@ class TutorAgent(BaseAgent):
         # 构建上下文
         context = ""
         if use_rag and self.rag_engine:
+            self._emit_event("tool_start", self.name, f"Retrieving context for: {user_input[:50]}...")
             context = self.rag_engine.build_context(user_input, k=3)
+            self._emit_event("progress", self.name, f"Retrieved {len(context)//100 if context else 0} context chunks")
+            self._emit_event("tool_end", self.name, "Context retrieval complete")
         
         # 构建 prompt
         if context:
@@ -112,7 +115,9 @@ class TutorAgent(BaseAgent):
             prompt = f"学生问题：{user_input}"
         
         # 调用 LLM
+        self._emit_event("progress", self.name, "Generating tutor response...")
         response = self._call_llm(prompt)
+        self._emit_event("progress", self.name, "Response generated.")
         
         return response
     

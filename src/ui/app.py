@@ -15,7 +15,12 @@ def main():
         page_title="XLearning Agent",
         page_icon="🎓",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="expanded",
+        menu_items={
+            'Get Help': 'https://github.com/BrunonXU/XLearning-Agent',
+            'Report a bug': "https://github.com/BrunonXU/XLearning-Agent/issues",
+            'About': "### XLearning Agent\n你的 AI 学习助手。支持 PDF 实时分析、RAG 检索与智能规划。"
+        }
     )
     
     # 2. Inject CSS

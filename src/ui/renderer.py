@@ -39,23 +39,20 @@ def render_chat_tab():
     
     messages = get_current_messages()
     
+    # ===== Message Rendering Wrap (Scrollable Anchor) =====
+    st.markdown('<div class="chat-anchor"></div>', unsafe_allow_html=True)
+    
     # ===== Empty Session State =====
     if not messages:
-        # If active session but no messages, show Home View or a Welcome Helper
-        # Usually implies new session
         pass 
     else:
         # ===== Message Rendering with Folding =====
         total = len(messages)
-        
-        # Fold old messages
         if total > MAX_VISIBLE_MESSAGES:
             hidden_count = total - MAX_VISIBLE_MESSAGES
             with st.expander(f"📜 {t('earlier_messages')} ({hidden_count})"):
                 for msg in messages[:hidden_count]:
                     _render_message(msg)
-            
-            # Render recent messages
             for msg in messages[hidden_count:]:
                 _render_message(msg)
         else:
@@ -134,17 +131,20 @@ def _render_chat_input():
     if "chat_input_val" not in st.session_state:
         st.session_state.chat_input_val = ""
     
-    # Use standard text_input with on_change for "Enter to Submit" support
-    st.text_input(
-        label="Message",
-        placeholder=t("chat_placeholder"), 
-        value="", 
-        key="chat_input_val",
-        on_change=on_input_change,
-        # label_visibility="collapsed" # Removed for 1.12.0 compat
-    )
-    
-    st.caption("Tip: Press Enter to send. (Streamlit 1.12.0 Compatible)")
+    # Wider Input Container
+    c1, c2 = st.columns([12, 1])
+    with c1:
+        st.text_input(
+            label="Message",
+            placeholder=t("chat_placeholder"), 
+            value="", 
+            key="chat_input_val",
+            on_change=on_input_change,
+        )
+    with c2:
+        if st.button("🚀", key="send_btn_icon"):
+            on_input_change()
+            st.experimental_rerun()
 
 
 # ============================================================================
@@ -213,8 +213,11 @@ def render_trace_tab():
             steps[step_id] = []
         steps[step_id].append(event)
     
-    # Render each step as an expander
-    for step_id, events in steps.items():
+    # Render each step as an expander (Reverse order: newest first)
+    step_list = list(steps.items())
+    step_list.reverse()
+    
+    for step_id, events in step_list:
         first_event = events[0]
         step_name = first_event.get("name", step_id)
         

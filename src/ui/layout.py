@@ -19,14 +19,15 @@ def render_sidebar():
     """Render the sidebar: Title -> Settings -> History."""
     
     with st.sidebar:
-        # ===== 1. App Title =====
-        st.markdown(f"## ⚛️ {t('app_title')}")
+        # ===== 1. App Title Centered & Massive =====
+        st.markdown(f'<div class="huge-sidebar-logo">⚛️ XLearning</div>', unsafe_allow_html=True)
         
         # ===== New Project Button =====
-        # Goes to Home View (Session = None)
+        st.markdown('<div class="new-chat-container">', unsafe_allow_html=True)
         if st.button(f"✨ {t('new_chat')}", key="new_chat_btn"):
             st.session_state.current_session_id = None
             st.experimental_rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
             
         st.markdown("---")
         
@@ -160,38 +161,40 @@ def render_workspace_view():
     if st.session_state.kb_status != "idle":
         _render_kb_status_bar()
     
-    # Build tabs
-    tab_names = [t("chat_tab"), "🧠 Brain"] # TODO: i18n
-    if st.session_state.show_trace:
-        tab_names.append(t("trace_tab"))
-    tab_names.extend([t("quiz_tab"), t("report_tab")])
+    # Custom Nav Bar (Replaces st.tabs) with Sticky Class
+    st.markdown('<div class="sticky-nav">', unsafe_allow_html=True)
+    nav_cols = st.columns(5)
     
-    tabs = st.tabs(tab_names)
+    tabs = [t("chat_tab"), "🧠 Brain", t("trace_tab"), t("quiz_tab"), t("report_tab")]
     
-    # Render Tabs
-    tab_idx = 0
-    with tabs[tab_idx]:
+    for i, tab_name in enumerate(tabs):
+        with nav_cols[i]:
+            is_active = st.session_state.active_tab == tab_name
+            # 1.12.0 Compat: No 'type'. Use emoji prefix to show active state.
+            display_name = f"● {tab_name}" if is_active else tab_name
+            if st.button(display_name, key=f"nav_{tab_name}"):
+                st.session_state.active_tab = tab_name
+                st.experimental_rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Render selected View based on active_tab
+    active = st.session_state.active_tab
+    
+    if active == t("chat_tab"):
         from src.ui.renderer import render_chat_tab
         render_chat_tab()
-    tab_idx += 1
-    
-    with tabs[tab_idx]:
+    elif active == "🧠 Brain":
         from src.ui.renderer import render_brain_tab
         render_brain_tab()
-    tab_idx += 1
-    
-    if st.session_state.show_trace:
-        with tabs[tab_idx]:
-            from src.ui.renderer import render_trace_tab
-            render_trace_tab()
-        tab_idx += 1
-        
-    with tabs[tab_idx]:
+    elif active == t("trace_tab"):
+        from src.ui.renderer import render_trace_tab
+        render_trace_tab()
+    elif active == t("quiz_tab"):
         from src.ui.renderer import render_quiz_tab
         render_quiz_tab()
-    tab_idx += 1
-        
-    with tabs[tab_idx]:
+    elif active == t("report_tab"):
         from src.ui.renderer import render_report_tab
         render_report_tab()
 

@@ -7,7 +7,7 @@ Handles: Agent Stream, Tools Events, Exception Management.
 
 import time
 import threading
-from typing import Generator, Optional
+from typing import Generator, Optional, Any
 
 import streamlit as st
 from src.agents.orchestrator import Orchestrator, OrchestratorMode
@@ -16,14 +16,22 @@ from src.ui.state import add_message, add_trace_event, set_kb_status
 # Global Orchestrator instance (lazy loaded)
 _ORCHESTRATOR = None
 
-def get_orchestrator() -> Orchestrator:
+def get_orchestrator(on_event: Optional[Any] = None) -> Orchestrator:
     """Get or create singleton Orchestrator instance."""
     global _ORCHESTRATOR
     if _ORCHESTRATOR is None:
         # Check session state for mode
         mode_str = st.session_state.get("mode", "standalone")
         mode = OrchestratorMode.STANDALONE if mode_str == "standalone" else OrchestratorMode.COORDINATED
-        _ORCHESTRATOR = Orchestrator(mode=mode)
+        _ORCHESTRATOR = Orchestrator(mode=mode, on_event=on_event)
+    else:
+        # Update callback if provided
+        if on_event:
+            _ORCHESTRATOR.on_event = on_event
+            _ORCHESTRATOR.planner.on_event = on_event
+            _ORCHESTRATOR.tutor.on_event = on_event
+            _ORCHESTRATOR.validator.on_event = on_event
+            
     return _ORCHESTRATOR
 
 def handle_chat_input(user_input: str, should_rerun: bool = True) -> None:
@@ -40,74 +48,93 @@ def handle_chat_input(user_input: str, should_rerun: bool = True) -> None:
     st.session_state.is_processing = True
     st.session_state.stop_requested = False
     
-    # Add user message immediately
-    # (Already added by renderer usually, but good to ensure)
-    # add_message("user", user_input) 
+    # 0. Clear previous trace for a clean view
+    from src.ui.state import clear_session_trace
+    clear_session_trace()
     
-    # 1. Initialize Orchestrator
-    orchestrator = get_orchestrator()
+    # 1. Define Trace Callback
+    import uuid
+    current_step_id = "step_" + uuid.uuid4().hex[:4]
     
-    # 2. Update Mode (if changed in UI)
-    current_mode = OrchestratorMode.STANDALONE if st.session_state.mode == "standalone" else OrchestratorMode.COORDINATED
-    if orchestrator.mode != current_mode:
-        orchestrator.switch_mode(current_mode)
+    def trace_callback(event_type: str, name: str, detail: str = ""):
+        nonlocal current_step_id
+        if event_type == "tool_start":
+            current_step_id = "step_" + uuid.uuid4().hex[:4]
+        from src.ui.state import add_trace_event
+        add_trace_event(current_step_id, event_type, name, detail)
 
-    # 3. Create a placeholder for streaming response
+    # 2. Add assistant message placeholder
     msg_id = add_message(
         role="assistant", 
-        content="Thinking...", 
+        content="正在思考中...", 
         agent="orchestrator", 
         status="streaming"
     )
     
-    try:
-        # 4. Run Orchestrator with MOCK TRACE SIMULATION
-        add_trace_event("orch_start", "progress", "Orchestrator Started")
-        
-        # --- SIMULATION START ---
-        import uuid
-        import time
-        import random
-        
-        # Step 1: Planning
-        step1 = "step_" + uuid.uuid4().hex[:4]
-        add_trace_event(step1, "tool_start", "PlannerAgent", "Analyzing user intent...")
-        time.sleep(0.8)
-        add_trace_event(step1, "tool_end", "PlannerAgent", "Intent detected: Knowledge Acquisition")
-        
-        # Step 2: Retrieval
-        step2 = "step_" + uuid.uuid4().hex[:4]
-        add_trace_event(step2, "tool_start", "TutorAgent", "Searching Knowledge Base...")
-        time.sleep(1.2)
-        add_trace_event(step2, "tool_end", "TutorAgent", f"Retrieved {random.randint(2,5)} relevant chunks")
-        
-        # Step 3: Verification (Optional random)
-        if random.random() > 0.5:
-            step3 = "step_" + uuid.uuid4().hex[:4]
-            add_trace_event(step3, "tool_start", "ValidatorAgent", "Fact-checking response...")
-            time.sleep(0.6)
-            add_trace_event(step3, "tool_end", "ValidatorAgent", "Confidence Score: 0.95")
-        # --- SIMULATION END ---
+    # 3. Asynchronous Execution Container (Thread Safe)
+    class OrchestratorThread(threading.Thread):
+        def __init__(self, user_input, mode_str, callback):
+            super().__init__()
+            self.user_input = user_input
+            self.mode_str = mode_str
+            self.callback = callback
+            self.result = None
+            self.error = None
+            self.done = False
 
-        response = orchestrator.run(user_input)
+        def run(self):
+            try:
+                orchestrator = get_orchestrator(on_event=self.callback)
+                # Ensure mode is synced (Using captured value)
+                current_mode = OrchestratorMode.STANDALONE if self.mode_str == "standalone" else OrchestratorMode.COORDINATED
+                if orchestrator.mode != current_mode:
+                    orchestrator.switch_mode(current_mode)
+                
+                self.callback("progress", "Orchestrator", "Handling user input...")
+                self.result = orchestrator.run(self.user_input)
+            except Exception as e:
+                self.error = e
+            finally:
+                self.done = True
+
+    # 4. Start Thread with captured mode
+    captured_mode = st.session_state.get("mode", "standalone")
+    thread = OrchestratorThread(user_input, captured_mode, trace_callback)
+    thread.start()
+    
+    # 5. Polling Loop to avoid UI Blur
+    # Streamlit blurs the UI while a script is running. 
+    # To keep it responsive, we use short sleeps and periodic reruns IF needed,
+    # OR we just let the thread run and wait in a controlled way.
+    # Note: Streamlit 1.12.0 doesn't have st.empty block for async as easily,
+    # but we can use a small wait loop.
+    
+    while not thread.done:
+        if st.session_state.stop_requested:
+            # Handle stop logic if possible (thread termination is hard in Python)
+            break
+        time.sleep(0.5)
+        # We don't rerun here to avoid flicker; the thread updates shared memory via callback
+        # (Though st.session_state updates in a thread might not be visible until next rerun)
+    
+    try:
+        if thread.error:
+            raise thread.error
         
-        # 5. Update complete message
-        # In a real streaming setup, we would update chunk by chunk.
-        # Here we just update the final content.
+        response = thread.result or "No response generated."
         
-        # Manually update the message in state (hacky but works for P1)
+        # 6. Update complete message
         if st.session_state.current_session:
             for msg in st.session_state.current_session["messages"]:
                 if msg["id"] == msg_id:
                     msg["content"] = response
                     msg["status"] = "complete"
-                    msg["agent"] = "tutor" # Default to Tutor for now
+                    msg["agent"] = "tutor"
                     break
         
-        add_trace_event("orch_end", "tool_end", "Orchestrator Finished")
+        trace_callback("progress", "Orchestrator", "Finished.")
         
     except Exception as e:
-        # Handle Error
         if st.session_state.current_session:
             for msg in st.session_state.current_session["messages"]:
                 if msg["id"] == msg_id:
@@ -115,7 +142,7 @@ def handle_chat_input(user_input: str, should_rerun: bool = True) -> None:
                     msg["status"] = "error"
                     msg["error"] = str(e)
                     break
-        st.error(f"Processing Error: {e}")
+        st.error(f"Error: {e}")
     
     finally:
         st.session_state.is_processing = False
