@@ -10,7 +10,6 @@ def get_css() -> str:
     """Return the CSS string."""
     return """
     <style>
-    /* Headers */
     @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&family=Inter:wght@400;500;600&display=swap');
     
     :root {
@@ -31,22 +30,21 @@ def get_css() -> str:
     [data-testid="stSidebar"] {
         background-color: var(--sidebar-bg);
         border-right: 1px solid #E6E4DD;
-        overflow-y: hidden !important; /* Hide Sidebar Scrollbar */
+        overflow-y: hidden !important;
     }
     
-    /* Hide scrollbar for Chrome/Safari */
     [data-testid="stSidebar"]::-webkit-scrollbar {
         display: none !important;
     }
     
-    /* Increase App Margin to push scrollbar left */
     .block-container {
         padding-right: 5rem !important;
         padding-left: 5rem !important;
         max-width: 100% !important;
+        overflow-x: hidden !important;
     }
     
-    /* Sidebar Buttons (Increased size) */
+    /* Sidebar Buttons */
     [data-testid="stSidebar"] .stButton > button {
         background-color: transparent;
         border: none;
@@ -62,20 +60,19 @@ def get_css() -> str:
         color: #000;
     }
     
-    /* Tabs font size - SUPER SCALED */
+    /* Tabs font size */
     button[data-baseweb="tab"] div {
-        font-size: 40px !important;
-        font-weight: 700 !important;
-        padding: 5px 15px;
+        font-size: 18px !important;
+        font-weight: 600 !important;
     }
     
     /* Sidebar Huge Logo */
     .huge-sidebar-logo {
-        font-size: 64px;
-        font-weight: 900;
+        font-size: 38px;
+        font-weight: 800;
         text-align: center;
-        margin-top: 20px;
-        margin-bottom: 40px;
+        margin-top: 15px;
+        margin-bottom: 25px;
         color: var(--accent-color);
         display: flex;
         align-items: center;
@@ -84,158 +81,166 @@ def get_css() -> str:
         width: 100%;
     }
     
-    /* Sticky Navigation Header (Dynamic Island Style) */
-    div[data-testid="stVerticalBlock"]:has(div.sticky-nav) {
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-        background-color: rgba(254, 253, 249, 0.9); /* Glassmorphism bg */
-        backdrop-filter: blur(10px);
-        padding: 15px 10px !important;
-        border-radius: 0 0 20px 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 40px !important;
-    }
-    
-    .sticky-nav {
-        display: none;
-    }
-    
-    /* Custom Navigation Buttons Scale - MASSIVE & UNIFORM WIDTH */
+    /* Custom Navigation Buttons */
     button[kind="secondary"] div[data-testid="stMarkdownContainer"] p, 
     button[kind="primary"] div[data-testid="stMarkdownContainer"] p {
-        font-size: 26px !important;
-        font-weight: 700 !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
     }
     button[kind="secondary"], button[kind="primary"] {
-        padding: 0 !important;
-        height: 64px !important;
-        min-width: 180px !important; /* Force Uniformity */
-        border-radius: 12px !important;
-        border: 2px solid transparent !important;
-        transition: all 0.2s ease;
-    }
-    button[kind="secondary"]:hover {
-        background-color: #E6E4DD !important;
-        border-color: #D1D5DB !important;
-    }
-    
-    /* Alert/Error Width Alignment - Matches Chat Bubble */
-    [data-testid="stNotification"] {
-        max-width: 82% !important;
-        border-radius: 18px !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.02) !important;
-    }
-    
-    /* Sidebar New Chat Button - PROMINENT */
-    .new-chat-container {
-        padding: 10px 0;
-        display: flex;
-        justify-content: center;
-        width: 100%;
-        margin-top: 10px;
-    }
-    .new-chat-container button {
-        width: 85% !important;
-        border: 1px solid var(--accent-color) !important;
-        background-color: white !important;
-        color: var(--accent-color) !important;
-        font-size: 20px !important;
-        font-weight: 600 !important;
-        padding: 10px !important;
+        padding: 4px 10px !important;
+        height: 42px !important;
+        min-width: 120px !important;
         border-radius: 8px !important;
-        display: flex !important;
-        justify-content: center !important;
+        border: 2px solid transparent !important;
     }
-    .new-chat-container button:hover {
-        background-color: var(--accent-color) !important;
-        color: white !important;
-    }
-
-    /* Legacy Chat Message Styles */
+    
+    /* Chat Bubble Styles */
     .chat-row {
         display: flex;
-        margin-bottom: 24px;
+        margin-bottom: 20px;
         align-items: flex-start;
+        width: 100%;
     }
     .chat-bubble {
-        padding: 18px 22px;
-        border-radius: 18px;
-        background-color: #FFFFFF;
+        padding: 14px 18px;
+        border-radius: 12px;
+        background-color: white;
         color: #1a1a1a;
-        max-width: 82%;
-        line-height: 1.6;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.02);
-        font-size: 18px;
+        max-width: 85%;
+        line-height: 1.5;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        font-size: 16px;
+        position: relative;
     }
     .user-bubble {
-        background-color: #F3F4F6; /* Light Gray for User */
-        border-top-right-radius: 4px;
+        background-color: #F3F4F6;
+        border-top-right-radius: 2px;
     }
     .assistant-bubble {
-        background-color: #FFFFFF;
+        background-color: white;
         border: 1px solid #E5E7EB;
-        border-top-left-radius: 4px;
+        border-top-left-radius: 2px;
     }
     .avatar-icon {
-        font-size: 24px;
-        margin-right: 16px;
-        margin-top: 4px;
-        width: 40px;
-        height: 40px;
+        font-size: 20px;
+        margin-right: 12px;
+        width: 36px;
+        height: 36px;
         display: flex;
         align-items: center;
         justify-content: center;
         background: #F9FAFB;
         border-radius: 50%;
         border: 1px solid #E5E7EB;
-    }
-    
-    /* INPUT AREA OVERHAUL (Targeting st.text_input) */
-    /* Remove orange outline (.st-bt/focus) */
-    .stInput input:focus {
-        border-color: #D1D5DB !important;
-        box-shadow: 0 0 0 1px #D1D5DB !important;
-        outline: none !important;
-    }
-    .stInput input {
-        border-radius: 20px !important;
-        padding: 15px 25px !important;
-        background-color: #FFFFFF !important;
-        border: 1px solid #E5E7EB !important;
-        font-size: 20px !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    }
-    
-    /* Fix potential horizontal scroll */
-    .block-container {
-        overflow-x: hidden !important;
-    }
-    
-    /* Scrollbar Styling - THICKER & POSITIVE POSITION */
-    ::-webkit-scrollbar {
-        width: 12px; /* Thicker */
-    }
-    ::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 10px;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #ccc;
-        border-radius: 10px;
-        border: 3px solid #f1f1f1; /* Padding look */
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background: #888;
+        flex-shrink: 0;
     }
 
-    /* Legacy Chat Message Styles */
-    .chat-row {
-...
-    div[data-testid="stForm"] {
-        border: none;
-        padding: 0;
+    /* Loading dots */
+    @keyframes blink { 0% { opacity: .2; } 20% { opacity: 1; } 100% { opacity: .2; } }
+    .loading-dots { animation: blink 1.4s infinite both; font-weight: bold; }
+
+    /* === UI 2.0: Stepper === */
+    .stepper-container {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-around !important;
+        align-items: center !important;
+        width: 100% !important;
+        margin: 0 0 25px 0 !important;
+        padding: 15px 5% !important;
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 999 !important;
+        background-color: white !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border-bottom: 1px solid #f0f0f0;
     }
+    .stepper-item {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        flex: 1 !important;
+    }
+    .stepper-circle {
+        width: 30px !important;
+        height: 30px !important;
+        border-radius: 50% !important;
+        background-color: #E5E7EB;
+        color: white;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-weight: bold;
+        font-size: 14px;
+        margin-bottom: 5px;
+        border: 2px solid #E5E7EB;
+    }
+    .stepper-item.active .stepper-circle {
+        background-color: var(--accent-color);
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 4px rgba(217, 119, 87, 0.15);
+    }
+    .stepper-item.done .stepper-circle {
+        background-color: #10B981;
+        border-color: #10B981;
+    }
+    .stepper-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #9CA3AF;
+    }
+    .stepper-item.active .stepper-label {
+        color: var(--accent-color);
+    }
+    .stepper-line {
+        position: absolute;
+        top: 15px;
+        height: 2px;
+        background-color: #E5E7EB;
+        width: 100%;
+        left: 50%;
+        z-index: 1;
+    }
+    .stepper-item:last-child .stepper-line {
+        display: none;
+    }
+
+    /* === UI 2.0: Action Banner === */
+    .action-banner {
+        background-color: #FEF3C7;
+        border: 1px solid #FDE68A;
+        border-radius: 10px;
+        padding: 12px 18px;
+        margin-top: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .action-text {
+        font-size: 14px;
+        color: #92400E;
+        font-weight: 500;
+        line-height: 1.4;
+    }
+
+    /* Layout tweaks */
+    .control-panel-container {
+        background-color: white;
+        border-radius: 12px;
+        padding: 24px;
+        border: 1px solid #F3F4F6;
+        min-height: 500px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #888; }
+    
+    div[data-testid="stForm"] { border: none; padding: 0; }
     </style>
     """
 

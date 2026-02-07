@@ -16,14 +16,13 @@ from src.ui.state import add_message, add_trace_event, set_kb_status
 # Global Orchestrator instance (lazy loaded)
 _ORCHESTRATOR = None
 
-def get_orchestrator(on_event: Optional[Any] = None) -> Orchestrator:
+def get_orchestrator(on_event: Optional[Any] = None, mode: Optional[str] = None) -> Orchestrator:
     """Get or create singleton Orchestrator instance."""
     global _ORCHESTRATOR
     if _ORCHESTRATOR is None:
-        # Check session state for mode
-        mode_str = st.session_state.get("mode", "standalone")
-        mode = OrchestratorMode.STANDALONE if mode_str == "standalone" else OrchestratorMode.COORDINATED
-        _ORCHESTRATOR = Orchestrator(mode=mode, on_event=on_event)
+        # User Feedback: Mode should be determined by Intent, not manual toggle.
+        # Defaulting to COORDINATED which includes Intent Classification.
+        _ORCHESTRATOR = Orchestrator(mode=OrchestratorMode.COORDINATED, on_event=on_event)
     else:
         # Update callback if provided
         if on_event:
@@ -52,17 +51,9 @@ def handle_chat_input(user_input: str, should_rerun: bool = True) -> None:
     from src.ui.state import clear_session_trace
     clear_session_trace()
     
-    # 1. Define Trace Callback
-    import uuid
-    current_step_id = "step_" + uuid.uuid4().hex[:4]
+    # 1. Add User Message immediately
+    add_message(role="user", content=user_input)
     
-    def trace_callback(event_type: str, name: str, detail: str = ""):
-        nonlocal current_step_id
-        if event_type == "tool_start":
-            current_step_id = "step_" + uuid.uuid4().hex[:4]
-        from src.ui.state import add_trace_event
-        add_trace_event(current_step_id, event_type, name, detail)
-
     # 2. Add assistant message placeholder
     msg_id = add_message(
         role="assistant", 
@@ -70,59 +61,75 @@ def handle_chat_input(user_input: str, should_rerun: bool = True) -> None:
         agent="orchestrator", 
         status="streaming"
     )
-    
-    # 3. Asynchronous Execution Container (Thread Safe)
-    class OrchestratorThread(threading.Thread):
-        def __init__(self, user_input, mode_str, callback):
-            super().__init__()
-            self.user_input = user_input
-            self.mode_str = mode_str
-            self.callback = callback
-            self.result = None
-            self.error = None
-            self.done = False
 
-        def run(self):
-            try:
-                orchestrator = get_orchestrator(on_event=self.callback)
-                # Ensure mode is synced (Using captured value)
-                current_mode = OrchestratorMode.STANDALONE if self.mode_str == "standalone" else OrchestratorMode.COORDINATED
-                if orchestrator.mode != current_mode:
-                    orchestrator.switch_mode(current_mode)
-                
-                self.callback("progress", "Orchestrator", "Handling user input...")
-                self.result = orchestrator.run(self.user_input)
-            except Exception as e:
-                self.error = e
-            finally:
-                self.done = True
+    # 3. Trigger immediate rerun to show the messages in UI
+    # We set a flag so that on the NEXT run, we start the processing.
+    st.session_state.pending_chat_query = user_input
+    st.session_state.pending_msg_id = msg_id
+    
+    if should_rerun:
+        st.experimental_rerun()
 
-    # 4. Start Thread with captured mode
-    captured_mode = st.session_state.get("mode", "standalone")
-    thread = OrchestratorThread(user_input, captured_mode, trace_callback)
-    thread.start()
+def process_pending_chat(should_rerun: bool = True):
+    """Process a query that was added to history but is waiting for LLM."""
+    if "pending_chat_query" not in st.session_state or not st.session_state.pending_chat_query:
+        return
+
+    user_input = st.session_state.pending_chat_query
+    msg_id = st.session_state.pending_msg_id
     
-    # 5. Polling Loop to avoid UI Blur
-    # Streamlit blurs the UI while a script is running. 
-    # To keep it responsive, we use short sleeps and periodic reruns IF needed,
-    # OR we just let the thread run and wait in a controlled way.
-    # Note: Streamlit 1.12.0 doesn't have st.empty block for async as easily,
-    # but we can use a small wait loop.
+    # Reset pending flags
+    st.session_state.pending_chat_query = None
+    st.session_state.pending_msg_id = None
+
+    # Define Trace Callback
+    import uuid
+    current_step_id_container = {"id": "initial"}
+
+    def trace_callback(event_type: str, name: str, detail: str = ""):
+        if event_type == "tool_start":
+            current_step_id_container["id"] = "step_" + uuid.uuid4().hex[:4]
+        from src.ui.state import add_trace_event
+        add_trace_event(current_step_id_container["id"], event_type, name, detail)
+
+    # Synchronous Processing (more stable in Streamlit 1.12.0)
+    import traceback
     
-    while not thread.done:
-        if st.session_state.stop_requested:
-            # Handle stop logic if possible (thread termination is hard in Python)
-            break
-        time.sleep(0.5)
-        # We don't rerun here to avoid flicker; the thread updates shared memory via callback
-        # (Though st.session_state updates in a thread might not be visible until next rerun)
+    print(f"[DEBUG] Starting synchronous processing loop for: {user_input[:20]}...")
     
+    # REPLACED WITH NON-BLOCKING UI:
+    # The "Thinking..." message is already in the message list with status="streaming".
     try:
-        if thread.error:
-            raise thread.error
+        # 4. Get or create orchestrator
+        print("[DEBUG] Getting Orchestrator instance...")
+        orchestrator = get_orchestrator(on_event=trace_callback)
         
-        response = thread.result or "No response generated."
+        # Default to coordinated for now as it handles classification
+        mode_str = "coordinated"
+        current_mode = OrchestratorMode.STANDALONE if mode_str == "standalone" else OrchestratorMode.COORDINATED
+        if orchestrator.mode != current_mode:
+            orchestrator.switch_mode(current_mode)
         
+        trace_callback("progress", "Orchestrator", "正在处理您的输入...")
+        
+        # Extract history (last 10 messages, including user message that was just added)
+        history = []
+        if st.session_state.current_session:
+            all_msgs = st.session_state.current_session.get("messages", [])
+            # Exclude the very last placeholder message that is currently "正在思考中..."
+            raw_history = all_msgs[:-2] if len(all_msgs) >= 2 else []
+            for m in raw_history[-10:]:
+                history.append({"role": m["role"], "content": m["content"]})
+
+        # 5. Execute Run
+        print(f"[DEBUG] Calling orchestrator.run with input length {len(user_input)} and history length {len(history)}...")
+        response = orchestrator.run(user_input, history=history)
+        
+        print(f"[DEBUG] Response received (length: {len(response) if response else 0})")
+        
+        if not response:
+            response = "未生成任何回复，请检查后台日志或 API Key 设置。"
+            
         # 6. Update complete message
         if st.session_state.current_session:
             for msg in st.session_state.current_session["messages"]:
@@ -132,17 +139,30 @@ def handle_chat_input(user_input: str, should_rerun: bool = True) -> None:
                     msg["agent"] = "tutor"
                     break
         
-        trace_callback("progress", "Orchestrator", "Finished.")
+        trace_callback("progress", "Orchestrator", "处理完成。")
         
+        # 7. Update Session Logic State
+        session = st.session_state.current_session
+        if session:
+            session["has_input"] = True
+            # Detection of plan generation
+            if "计划" in response or "📋" in response:
+                session["plan"] = {"status": "generated"}
+            if "开始学习" in response or "学习" in user_input:
+                if session.get("plan"):
+                    session["study_progress"] = max(session.get("study_progress", 0), 1)
+
     except Exception as e:
+        err_trace = traceback.format_exc()
         if st.session_state.current_session:
             for msg in st.session_state.current_session["messages"]:
                 if msg["id"] == msg_id:
-                    msg["content"] = f"Error: {str(e)}"
+                    msg["content"] = f"⚠️ 处理失败: {str(e)}"
                     msg["status"] = "error"
-                    msg["error"] = str(e)
+                    msg["error"] = err_trace
                     break
-        st.error(f"Error: {e}")
+        st.error(f"Execution Error: {e}")
+        print(f"[UI Logic Error] {err_trace}")
     
     finally:
         st.session_state.is_processing = False
@@ -156,14 +176,26 @@ def handle_file_upload(file) -> None:
     """Handle PDF upload via Orchestrator."""
     orchestrator = get_orchestrator()
     try:
-        content = file.read()
-        set_kb_status("parsing", source=file.name)
-        
-        # Simulate processing time or make clear it's sync
-        result = orchestrator.process_file(content, file.name)
-        
-        set_kb_status("ready", count=100) # Mock count for now
-        add_message("system", result, agent="validator")
+        with st.spinner(f"正在深入分析 {file.name} 并构建专属知识库，这可能需要几十秒..."):
+            content = file.read()
+            set_kb_status("parsing", source=file.name)
+            
+            # Call Orchestrator
+            result = orchestrator.process_file(content, file.name)
+            
+            if result.get("success", False):
+                count = result.get("chunks", 0)
+                set_kb_status("ready", count=count)
+                
+                # Sync logic state
+                if st.session_state.current_session:
+                    st.session_state.current_session["kb_count"] = count
+                    st.session_state.current_session["has_input"] = True
+                
+                add_message("system", result.get("message"), agent="validator")
+            else:
+                set_kb_status("error", error=result.get("message"))
+                add_message("system", result.get("message"), agent="system", status="error")
         
     except Exception as e:
         set_kb_status("error", error=str(e))
@@ -178,41 +210,42 @@ def handle_generate_quiz() -> None:
         {
             "qid": "q1",
             "question": "Python 中用于定义函数的关键字是？",
-            "choices": ["func", "def", "function", "define"],
-            "answer_index": 1,
+            "options": ["func", "def", "function", "define"],
+            "correct_answer": "B",
             "explanation": "在 Python 中，使用 `def` 关键字来定义函数。"
         },
         {
             "qid": "q2",
             "question": "以下哪个数据结构是不可变的？",
-            "choices": ["List", "Dictionary", "Tuple", "Set"],
-            "answer_index": 2,
+            "options": ["List", "Dictionary", "Tuple", "Set"],
+            "correct_answer": "C",
             "explanation": "Tuple（元组）一旦创建就不能修改，是不可变序列。"
         },
         {
             "qid": "q3",
             "question": "如何获取列表 `my_list` 的长度？",
-            "choices": ["my_list.length()", "length(my_list)", "len(my_list)", "my_list.size()"],
-            "answer_index": 2,
+            "options": ["my_list.length()", "length(my_list)", "len(my_list)", "my_list.size()"],
+            "correct_answer": "C",
             "explanation": "内置函数 `len()` 用于获取序列（如列表、字符串）的长度。"
         },
         {
             "qid": "q4",
             "question": "RAG 系统中的 'R' 代表什么？",
-            "choices": ["Read", "Retrieve", "Reason", "Rank"],
-            "answer_index": 1,
+            "options": ["Read", "Retrieve", "Reason", "Rank"],
+            "correct_answer": "B",
             "explanation": "RAG 代表 Retrieval-Augmented Generation（检索增强生成）。"
         },
         {
             "qid": "q5",
             "question": "Streamlit 的主要用途是什么？",
-            "choices": ["游戏开发", "Web 应用快速开发", "嵌入式系统", "移动应用"],
-            "answer_index": 1,
+            "options": ["游戏开发", "Web 应用快速开发", "嵌入式系统", "移动应用"],
+            "correct_answer": "B",
             "explanation": "Streamlit 是一个开源 Python 库，用于快速构建和共享数据 Web 应用。"
         }
     ]
     
     if st.session_state.current_session:
+        st.session_state.current_session["quiz_attempts"] = st.session_state.current_session.get("quiz_attempts", 0) + 1
         st.session_state.current_session["quiz"]["questions"] = mock_questions
         st.session_state.current_session["quiz"]["score"] = None
         st.session_state.current_session["quiz"]["wrong_questions"] = []

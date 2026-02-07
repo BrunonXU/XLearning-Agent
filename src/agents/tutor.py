@@ -96,7 +96,16 @@ class TutorAgent(BaseAgent):
         context = ""
         if use_rag and self.rag_engine:
             self._emit_event("tool_start", self.name, f"Retrieving context for: {user_input[:50]}...")
-            context = self.rag_engine.build_context(user_input, k=3)
+            
+            # --- 增强检索对于泛指词的命中 ---
+            query = user_input
+            if any(kw in user_input for kw in ["paper", "document", "this", "论文", "文档", "这"]):
+                # 如果用户指代不明，尝试通过附加关键词扩大检索范围
+                query += " summary introduction overview abstract"
+            
+            # 使用稍大的 k 值确保能检索到上下文
+            context = self.rag_engine.build_context(query, k=5)
+            
             self._emit_event("progress", self.name, f"Retrieved {len(context)//100 if context else 0} context chunks")
             self._emit_event("tool_end", self.name, "Context retrieval complete")
         

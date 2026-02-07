@@ -1,0 +1,21 @@
+{
+  "current_stage": "Input",
+  "has_input": false,
+  "plan": null,
+  "kb_count": 0,
+  "study_progress": 0,
+  "quiz_attempts": 0,
+  "messages": [],
+  "trace": [],
+  "quiz": {
+    "questions": [],
+    "answers": {},
+    "wrong_questions": [],
+    "score": null
+  },
+  "report": {
+    "generated": false,
+    "content": "",
+    "ts": null
+  }
+}

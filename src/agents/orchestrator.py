@@ -98,8 +98,13 @@ class Orchestrator:
         """设置学习领域"""
         import re
         
-        self.domain = domain
-        self.file_manager = FileManager(domain)
+        # Sanitize domain for filesystem safety (remove invalid chars)
+        safe_domain = re.sub(r'[<>:"/\\|?*]', '', domain).strip()
+        if not safe_domain:
+            safe_domain = "default_domain"
+            
+        self.domain = safe_domain
+        self.file_manager = FileManager(self.domain)
         
         # 清理 collection 名称（只保留英文、数字、下划线、点、横线）
         safe_name = re.sub(r'[^a-zA-Z0-9._-]', '', domain.replace(' ', '_'))
@@ -121,7 +126,7 @@ class Orchestrator:
         if self.on_event:
             self.on_event(event_type, name, detail)
 
-    def process_file(self, file_content: bytes, filename: str) -> str:
+    def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
         处理上传的文件
         
@@ -134,7 +139,7 @@ class Orchestrator:
             filename: 文件名
             
         Returns:
-            处理结果描述
+            处理结果字典
         """
         from src.specialists.pdf_analyzer import PDFAnalyzer
         
@@ -144,87 +149,106 @@ class Orchestrator:
             analyzer = PDFAnalyzer()
             pdf_content = analyzer.analyze_from_bytes(file_content, filename)
             
+            chunk_count = 0
             # 导入 RAG
+            if self.rag_engine is None:
+                # Auto-initialize domain/RAG if not set
+                print(f"[Orchestrator] Auto-setting domain to: {pdf_content.title}")
+                self.set_domain(pdf_content.title or "default_domain")
+
             if self.rag_engine:
-                analyzer.import_to_rag(pdf_content, self.rag_engine)
+                ids = analyzer.import_to_rag(pdf_content, self.rag_engine)
+                chunk_count = len(ids)
             
-            self._emit_event("tool_end", "FileProcessor", f"Successfully indexed {pdf_content.title}")
-            return f"✅ 已处理 PDF: {pdf_content.title}\n- 共 {pdf_content.total_pages} 页\n- 已导入知识库"
+            self._emit_event("tool_end", "FileProcessor", f"Successfully indexed {pdf_content.title} ({chunk_count} chunks)")
+            
+            return {
+                "success": True,
+                "message": f"✅ 已处理 PDF: {pdf_content.title}\n- 共 {pdf_content.total_pages} 页\n- 已生成 {chunk_count} 个知识切片",
+                "title": pdf_content.title,
+                "pages": pdf_content.total_pages,
+                "chunks": chunk_count
+            }
         else:
             self._emit_event("tool_end", "FileProcessor", f"Unsupported file type: {filename}")
             # 其他文件类型暂不支持
-            return f"⚠️ 暂不支持 {filename} 的文件类型"
+            return {
+                "success": False,
+                "message": f"⚠️ 暂不支持 {filename} 的文件类型",
+                "chunks": 0
+            }
 
     def run(
         self,
         user_input: str,
+        history: Optional[List[Dict[str, str]]] = None,
         **kwargs
     ) -> str:
         """
         处理用户输入
         """
-        self._emit_event("progress", "Orchestrator", f"Starting in {self.mode} mode")
+        mode_cn = "自动协调" if self.mode == OrchestratorMode.COORDINATED else "独立"
+        self._emit_event("progress", "Orchestrator", f"正在以 {mode_cn} 模式启动")
         if self.mode == OrchestratorMode.COORDINATED:
-            return self._run_coordinated(user_input, **kwargs)
+            return self._run_coordinated(user_input, history=history, **kwargs)
         else:
-            return self._run_standalone(user_input, **kwargs)
+            return self._run_standalone(user_input, history=history, **kwargs)
 
-    def _run_standalone(self, user_input: str, **kwargs) -> str:
+    def _run_standalone(self, user_input: str, history: Optional[List[Dict[str, str]]] = None, **kwargs) -> str:
         """
         单独模式：根据意图调用对应 Agent
         """
         intent = self._detect_intent(user_input)
-        self._emit_event("progress", "IntentDetection", f"Detected Intent: {intent}")
+        self._emit_event("progress", "IntentDetection", f"识别到的意图: {intent}")
         
         if intent == "create_plan":
             return self._handle_create_plan(user_input)
         elif intent == "ask_question":
-            return self._handle_ask_question(user_input)
+            return self._handle_ask_question(user_input, history=history)
         elif intent == "start_quiz":
             return self._handle_start_quiz(user_input)
         elif intent == "get_report":
             return self._handle_get_report()
         else:
             # 默认当作问答处理
-            return self._handle_ask_question(user_input)
+            return self._handle_ask_question(user_input, history=history)
     
-    def _run_coordinated(self, user_input: str, **kwargs) -> str:
+    def _run_coordinated(self, user_input: str, history: Optional[List[Dict[str, str]]] = None, **kwargs) -> str:
         """
-        协调模式：自动执行完整流程
-        
-        流程：规划 → 学习 → 验证 → 总结
+        协调模式：自动执行完整流程，同时响应用户意图
         """
-        responses = []
-        
-        # 1. 规划阶段
+        intent = self._detect_intent(user_input)
+        self._emit_event("progress", "IntentDetection", f"协调模式意图识别: {intent}")
+
+        # 如果用户明确提到“重新开始”或者切换了话题（简单检测）
+        if any(kw in user_input for kw in ["重新开始", "换个话题", "新课程"]):
+            self.state = OrchestratorState.IDLE
+            self._emit_event("progress", "Orchestrator", "已重置流程状态")
+
+        # 1. 如果处于初始状态，且意图是学习或问答，先触发规划
         if self.state == OrchestratorState.IDLE:
             self.state = OrchestratorState.PLANNING
-            responses.append("📋 **阶段 1: 生成学习计划**\n")
-            plan_response = self._handle_create_plan(user_input)
-            responses.append(plan_response)
-            responses.append("\n---\n")
-        
-        # 2. 学习阶段
-        if self.state == OrchestratorState.PLANNING:
+            self._emit_event("progress", "Orchestrator", "进入规划阶段")
+            plan_msg = self._handle_create_plan(user_input)
+            
+            # 如果意图只是问个简单问题，规划完直接进入学习并回答
             self.state = OrchestratorState.LEARNING
-            responses.append("🎓 **阶段 2: 开始学习**\n")
-            responses.append("学习计划已生成，你可以开始提问或开始测验。\n")
-            responses.append("\n---\n")
-        
-        # 3. 验证阶段
-        if self.state == OrchestratorState.LEARNING:
+            if intent == "ask_question":
+                answer = self._handle_ask_question(user_input, history=history)
+                return f"📋 **我已为您制定了学习计划：**\n\n{plan_msg}\n\n---\n\n🎓 **针对您的问题，我的解答如下：**\n\n{answer}"
+            return plan_msg
+
+        # 2. 如果已经在学习中，根据意图路由
+        if intent == "start_quiz":
             self.state = OrchestratorState.VALIDATING
-            responses.append("✅ **阶段 3: 知识验证**\n")
-            quiz_response = self._handle_start_quiz(user_input)
-            responses.append(quiz_response)
-            responses.append("\n---\n")
-        
-        # 4. 完成
-        self.state = OrchestratorState.COMPLETED
-        responses.append("📊 **流程完成！**\n")
-        responses.append("你可以查看进度报告，或继续学习。")
-        
-        return "\n".join(responses)
+            return self._handle_start_quiz(user_input)
+        elif intent == "get_report":
+            return self._handle_get_report()
+        elif intent == "create_plan" and self.state != OrchestratorState.PLANNING:
+            return self._handle_create_plan(user_input)
+        else:
+            # 默认：在当前背景下进行辅导
+            return self._handle_ask_question(user_input, history=history)
     
     def _detect_intent(self, user_input: str) -> str:
         """
@@ -254,7 +278,24 @@ class Orchestrator:
         if not self.domain:
             self.set_domain(user_input[:50])  # 用输入的前 50 字符作为领域名
         
-        plan = self.planner.run(user_input)
+        # 0. 尝试从 RAG 获取上下文
+        rag_context = ""
+        if self.rag_engine:
+            # 简单策略：如果用户输入很短（如"生成计划"），则获取 RAG 中的全库摘要
+            # 如果用户输入具体（如"学习 Transformer"），则检索相关
+            if len(user_input) < 20: 
+                # 模拟全库摘要：获取任意一些切片
+                rag_context = self.rag_engine.build_context("summary overview", k=5)
+            else:
+                rag_context = self.rag_engine.build_context(user_input, k=5)
+                
+        # 1. 构造输入给 Planner
+        # 如果有 RAG 上下文，将其附在输入后
+        planner_input = user_input
+        if rag_context:
+            planner_input = f"用户目标: {user_input}\n\n参考资料内容:\n{rag_context}"
+
+        plan = self.planner.run(planner_input)
         
         # 保存计划
         if self.file_manager:
@@ -269,9 +310,9 @@ class Orchestrator:
         
         return f"✅ 学习计划已生成！\n\n{plan.to_markdown()}"
     
-    def _handle_ask_question(self, user_input: str) -> str:
+    def _handle_ask_question(self, user_input: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """处理问答请求"""
-        return self.tutor.run(user_input, mode=SessionMode.FREE)
+        return self.tutor.run(user_input, mode=SessionMode.FREE, history=history)
     
     def _handle_start_quiz(self, user_input: str) -> str:
         """处理开始测验请求"""

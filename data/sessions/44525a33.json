@@ -175,6 +175,28 @@
       "error": "st.session_state has no attribute \"current_session\". Did you forget to initialize it? More info: https://docs.streamlit.io/library/advanced-features/session-state#initialization",
       "citations": [],
       "ts": "2026-02-07T04:24:24.986585"
+    },
+    {
+      "id": "msg_0fa6fc",
+      "role": "assistant",
+      "agent": "orchestrator",
+      "content": "Error: st.session_state has no attribute \"current_session\". Did you forget to initialize it? More info: https://docs.streamlit.io/library/advanced-features/session-state#initialization",
+      "status": "error",
+      "parent_step_id": null,
+      "error": "st.session_state has no attribute \"current_session\". Did you forget to initialize it? More info: https://docs.streamlit.io/library/advanced-features/session-state#initialization",
+      "citations": [],
+      "ts": "2026-02-07T22:49:20.274660"
+    },
+    {
+      "id": "msg_cc3ebc",
+      "role": "assistant",
+      "agent": "orchestrator",
+      "content": "Error: st.session_state has no attribute \"current_session\". Did you forget to initialize it? More info: https://docs.streamlit.io/library/advanced-features/session-state#initialization",
+      "status": "error",
+      "parent_step_id": null,
+      "error": "st.session_state has no attribute \"current_session\". Did you forget to initialize it? More info: https://docs.streamlit.io/library/advanced-features/session-state#initialization",
+      "citations": [],
+      "ts": "2026-02-07T22:49:29.669223"
     }
   ],
   "trace": [],

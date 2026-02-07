@@ -31,24 +31,31 @@ def render_sidebar():
             
         st.markdown("---")
         
-        # ===== 2. Global Settings (Top Placement) =====
-        # Compact Mode/Lang Selector
-        c1, c2 = st.columns(2)
-        with c1:
-            # Mode
-            mode_options = [t("standalone"), t("orchestrated")]
-            mode_idx = 0 if st.session_state.mode == "standalone" else 1
-            selected_mode = st.selectbox("Mode", mode_options, index=mode_idx, key="mode_select")
-            st.session_state.mode = "standalone" if selected_mode == t("standalone") else "orchestrated"
-        with c2:
-            # Lang
-            lang_options = ["中文", "English"]
-            lang_idx = 0 if st.session_state.lang == "zh" else 1
-            selected_lang = st.selectbox("Lang", lang_options, index=lang_idx, key="lang_select")
-            st.session_state.lang = "zh" if selected_lang == "中文" else "en"
-            
-        # Trace Toggle
-        st.session_state.show_trace = st.checkbox(t("show_trace"), value=st.session_state.show_trace, key="trace_toggle")
+        # ===== 2. Global Settings =====
+        st.markdown("**⚙️ 设置**")
+        
+        # Language
+        lang_options = ["中文", "English"]
+        lang_idx = 0 if st.session_state.lang == "zh" else 1
+        selected_lang = st.selectbox("语言 Language", lang_options, index=lang_idx, key="lang_select")
+        st.session_state.lang = "zh" if selected_lang == "中文" else "en"
+        
+        # UI Mode
+        ui_modes = {"Guided": "引导模式 (推荐)", "Free": "自由模式"}
+        rev_modes = {v: k for k, v in ui_modes.items()}
+        selected_mode_label = st.radio(
+            "交互模式 Mode", 
+            options=list(ui_modes.values()), 
+            index=0 if st.session_state.ui_mode == "guided" else 1,
+            key="ui_mode_radio"
+        )
+        st.session_state.ui_mode = rev_modes[selected_mode_label].lower()
+
+        # Dev Options
+        with st.expander("🛠️ 开发者选项", expanded=st.session_state.dev_mode):
+            st.session_state.dev_mode = st.checkbox("启用开发模式", value=st.session_state.dev_mode, key="dev_toggle")
+            if st.session_state.dev_mode:
+                 st.session_state.show_trace = st.checkbox("显示 Trace", value=st.session_state.show_trace, key="trace_toggle")
 
         st.markdown("---")
         
@@ -155,48 +162,141 @@ def render_home_view():
 
 
 def render_workspace_view():
-    """Render the active project workspace with Tabs."""
+    """Render the active project workspace with Stepper and 2-column layout."""
     
-    # KB Status Bar
-    if st.session_state.kb_status != "idle":
-        _render_kb_status_bar()
+    from src.ui.state import calculate_stage_logic
     
-    # Custom Nav Bar (Replaces st.tabs) with Sticky Class
-    st.markdown('<div class="sticky-nav">', unsafe_allow_html=True)
-    nav_cols = st.columns(5)
+    # 1. Calculate Logic
+    logic = calculate_stage_logic(st.session_state.current_session)
+    stages = logic.get("stages", {})
+    current_stage = st.session_state.active_tab # Use active_tab to track current view
     
-    tabs = [t("chat_tab"), "🧠 Brain", t("trace_tab"), t("quiz_tab"), t("report_tab")]
+    # 2. Render Stepper
+    _render_stepper(stages, current_stage)
     
-    for i, tab_name in enumerate(tabs):
-        with nav_cols[i]:
-            is_active = st.session_state.active_tab == tab_name
-            # 1.12.0 Compat: No 'type'. Use emoji prefix to show active state.
-            display_name = f"● {tab_name}" if is_active else tab_name
-            if st.button(display_name, key=f"nav_{tab_name}"):
-                st.session_state.active_tab = tab_name
-                st.experimental_rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Custom Split Ratio (Workaround for non-resizable columns)
+    split_ratio = st.sidebar.slider("↔️ 聊天栏宽度 Chat Width", 30, 70, 60, key="layout_split") / 100
     
-    st.markdown("---")
+    # 3. Double Column Layout
+    # Column 1: Chat | Column 2: Panel
+    c_chat, c_panel = st.columns([split_ratio, 1 - split_ratio])
     
-    # Render selected View based on active_tab
-    active = st.session_state.active_tab
-    
-    if active == t("chat_tab"):
+    with c_chat:
+
         from src.ui.renderer import render_chat_tab
         render_chat_tab()
-    elif active == "🧠 Brain":
-        from src.ui.renderer import render_brain_tab
-        render_brain_tab()
-    elif active == t("trace_tab"):
-        from src.ui.renderer import render_trace_tab
-        render_trace_tab()
-    elif active == t("quiz_tab"):
-        from src.ui.renderer import render_quiz_tab
-        render_quiz_tab()
-    elif active == t("report_tab"):
-        from src.ui.renderer import render_report_tab
-        render_report_tab()
+        
+        # Action Banner at the bottom of Chat
+        _render_action_banner(stages, st.session_state.active_tab)
+        
+    with c_panel:
+        st.markdown(f"#### 🛠️ {stages.get(current_stage, {}).get('label', current_stage)} 面板")
+        st.markdown('<div class="control-panel-container">', unsafe_allow_html=True)
+        
+        # Render View based on active_tab (formerly stage)
+        if current_stage == "Input":
+            # Repurpose Brain tab for Input/KB
+            from src.ui.renderer import render_brain_tab
+            render_brain_tab()
+        elif current_stage == "Plan":
+            # For now show plan in markdown or customized
+            # I will use a simplified render_plan if exists, or reuse Brain
+            from src.ui.renderer import render_brain_tab
+            render_brain_tab()
+        elif current_stage == "Study":
+            st.info("学习模式：点击左侧对话提问，或查看右侧知识卡片。")
+            from src.ui.renderer import render_brain_tab
+            render_brain_tab()
+        elif current_stage == "Quiz":
+            from src.ui.renderer import render_quiz_tab
+            render_quiz_tab()
+        elif current_stage == "Report":
+            from src.ui.renderer import render_report_tab
+            render_report_tab()
+        elif current_stage == "Trace":
+            from src.ui.renderer import render_trace_tab
+            render_trace_tab()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+def _render_stepper(stages: dict, active_stage: str):
+    """Render the horizontal stepper component."""
+    
+    stage_keys = ["Input", "Plan", "Study", "Quiz", "Report", "Trace"]
+    
+    # HTML-based Stepper for beautiful UI
+    items_html = ""
+    for i, key in enumerate(stage_keys):
+        s = stages.get(key, {})
+        status_class = ""
+        if key == active_stage: status_class = "active"
+        elif s.get("done"): status_class = "done"
+        elif s.get("ready"): status_class = "ready"
+        
+        label = s.get("label", key)
+        circle_content = "✓" if status_class == "done" else str(i+1)
+        
+        items_html += f'<div class="stepper-item {status_class}"><div class="stepper-circle">{circle_content}</div><div class="stepper-label">{label}</div><div class="stepper-line"></div></div>'
+
+    full_html = f'<div class="stepper-container">{items_html}</div>'
+    st.write(full_html, unsafe_allow_html=True)
+    
+    # Hidden Streamlit selectors to actually change the stage (Free Mode)
+    st.markdown('<div style="margin-top: -5px;">', unsafe_allow_html=True)
+    cols = st.columns(len(stage_keys))
+    for i, key in enumerate(stage_keys):
+        with cols[i]:
+            s = stages.get(key, {})
+            # If ready or dev_mode, let user click
+            # Use ghost button or transparent button for overlay effect
+            btn_label = "Go" if s.get("ready") or st.session_state.get("dev_mode") else "🔒"
+            if st.button(btn_label, key=f"step_btn_{key}"):
+                if s.get("ready") or st.session_state.get("dev_mode"):
+                    st.session_state.active_tab = key
+                    st.experimental_rerun()
+                else:
+                    st.warning(s.get("block_msg", "尚未解锁"))
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def _render_action_banner(stages: dict, active_stage: str):
+    """Render the Guided mode Action Banner."""
+    
+    if st.session_state.get("ui_mode") != "guided":
+        return
+        
+    # Get current logic
+    s = stages.get(active_stage, {})
+    banner_text = s.get("banner", "")
+    action = s.get("action", "")
+    
+    target_stage = active_stage
+    # If done, suggest next stage
+    if s.get("done"):
+        stage_keys = ["Input", "Plan", "Study", "Quiz", "Report"]
+        idx = stage_keys.index(active_stage)
+        if idx < len(stage_keys) - 1:
+            next_stage = stage_keys[idx+1]
+            if stages.get(next_stage, {}).get("ready"):
+                banner_text = stages[next_stage]["banner"]
+                action = stages[next_stage]["action"]
+                target_stage = next_stage
+
+    if not banner_text:
+        return
+
+    st.markdown(f"""
+    <div class="action-banner">
+        <div class="action-text">{banner_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("✨ 执行下一步", key="action_banner_btn"):
+        # Switch to target stage panel
+        st.session_state.active_tab = target_stage
+        
+        # If input stage and no prompt, maybe suggest?
+        # For now just switch view
+        st.experimental_rerun()
 
 
 # ============================================================================

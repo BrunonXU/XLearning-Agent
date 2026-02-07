@@ -155,9 +155,26 @@ class ValidatorAgent(BaseAgent):
         correct_count = 0
         wrong_topics = []
         
+        # Handle both integer indices and string answers (compatibility)
+        normalized_answers = []
+        for ans in answers:
+            if isinstance(ans, str):
+                # Simple heuristic: if answer is "A"/"B" etc, convert to index? 
+                # Or just keep as is if quiz expects strings. 
+                # For now assuming index based on Quiz model.
+                # But generic QuizResult expects list of answers.
+                normalized_answers.append(ans)
+            else:
+                normalized_answers.append(ans)
+
         for i, (question, answer) in enumerate(zip(quiz.questions, answers)):
-            correct_idx = question.answer_index if hasattr(question, "answer_index") else 0
-            if answer == correct_idx:
+            # Normalize answer: if int, convert to letter
+            user_ans = answer
+            if isinstance(answer, int):
+                user_ans = "ABCD"[answer] if 0 <= answer < 4 else "?"
+            
+            # Compare with correct_answer (string)
+            if user_ans == question.correct_answer:
                 correct_count += 1
             else:
                 if question.topic:
@@ -165,9 +182,30 @@ class ValidatorAgent(BaseAgent):
         
         total = len(quiz.questions)
         accuracy = correct_count / total if total > 0 else 0
+        
+        # Generte feedback
+        if accuracy >= 0.8:
+            feedback = "🎉 太棒了！你对这个主题掌握得很好！"
+        elif accuracy >= 0.6:
+            feedback = "👍 不错！继续努力，还有一些知识点需要加强。"
+        else:
+            feedback = "💪 需要多复习一下这部分内容，不要气馁！"
+
         self._emit_event("tool_end", self.name, f"Evaluation complete. Accuracy: {accuracy:.1%}")
         
-        # ... rest of method logic ...
+        result = QuizResult(
+            quiz_id=str(id(quiz)),
+            answers=answers,
+            correct_count=correct_count,
+            total_count=total,
+            accuracy=accuracy,
+            wrong_topics=list(set(wrong_topics)),
+            feedback=feedback,
+        )
+        self.quiz_history.append(result)
+        return result
+
+    def _parse_questions(self, response: str) -> List[Question]:
         """解析 LLM 返回的题目 JSON"""
         import json
         import re
@@ -178,10 +216,11 @@ class ValidatorAgent(BaseAgent):
             # 返回默认题目
             return [
                 Question(
-                    question="这是一道示例题目",
+                    qid="mock_q1",
+                    question="这是一道示例题目（解析失败）",
                     type=QuestionType.SINGLE_CHOICE,
-                    options=["选项A", "选项B", "选项C", "选项D"],
-                    correct_answer="A",
+                    choices=["选项A", "选项B", "选项C", "选项D"],
+                    answer_index=0,
                     explanation="这是解析",
                     topic="示例知识点",
                 )
@@ -190,14 +229,20 @@ class ValidatorAgent(BaseAgent):
         try:
             data = json.loads(json_match.group())
             questions = []
-            for item in data:
+            for i, item in enumerate(data):
+                options = item.get("options", [])
+                correct_answer = item.get("correct_answer", "A")
+                
+                # Check mapping if necessary
+                
                 questions.append(Question(
+                    qid="mock_q1", # Dummy field if needed, or check model
                     question=item.get("question", ""),
                     type=QuestionType.SINGLE_CHOICE,
-                    options=item.get("options", []),
-                    correct_answer=item.get("correct_answer", ""),
+                    options=options, # Use options
+                    correct_answer=correct_answer, # Use correct_answer
                     explanation=item.get("explanation", ""),
-                    topic=item.get("topic", ""),
+                    topic=item.get("topic", item.get("question", "")[:10]),
                 ))
             return questions
         except json.JSONDecodeError:
@@ -209,56 +254,6 @@ class ValidatorAgent(BaseAgent):
                     correct_answer="A",
                 )
             ]
-    
-    def evaluate_answers(
-        self,
-        quiz: Quiz,
-        answers: List[str],
-    ) -> QuizResult:
-        """
-        评估测验答案
-        
-        Args:
-            quiz: 测验对象
-            answers: 用户答案列表
-            
-        Returns:
-            QuizResult 对象
-        """
-        correct_count = 0
-        wrong_topics = []
-        
-        for i, (question, answer) in enumerate(zip(quiz.questions, answers)):
-            if answer.strip().upper() == question.correct_answer.strip().upper():
-                correct_count += 1
-            else:
-                if question.topic:
-                    wrong_topics.append(question.topic)
-        
-        total = len(quiz.questions)
-        accuracy = correct_count / total if total > 0 else 0
-        
-        # 生成反馈
-        if accuracy >= 0.8:
-            feedback = "🎉 太棒了！你对这个主题掌握得很好！"
-        elif accuracy >= 0.6:
-            feedback = "👍 不错！继续努力，还有一些知识点需要加强。"
-        else:
-            feedback = "💪 需要多复习一下这部分内容，不要气馁！"
-        
-        result = QuizResult(
-            quiz_id=str(id(quiz)),
-            answers=answers,
-            correct_count=correct_count,
-            total_count=total,
-            accuracy=accuracy,
-            wrong_topics=list(set(wrong_topics)),
-            feedback=feedback,
-        )
-        
-        self.quiz_history.append(result)
-        
-        return result
     
     def generate_report(
         self,

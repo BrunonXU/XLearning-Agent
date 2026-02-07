@@ -197,12 +197,15 @@ def init_session_state() -> None:
         st.session_state.lang = "zh"
     if "show_trace" not in st.session_state:
         st.session_state.show_trace = False
-    if "mode" not in st.session_state:
-        st.session_state.mode = "standalone"
+    if "dev_mode" not in st.session_state:
+        st.session_state.dev_mode = False # Toggle for Trace
+    if "ui_mode" not in st.session_state:
+        st.session_state.ui_mode = "guided" # guided or free
     if "current_session_id" not in st.session_state:
         st.session_state.current_session_id = None
     if "active_tab" not in st.session_state:
-        st.session_state.active_tab = "对话" # Default to translated Chat tab name
+        # active_tab now represents the current VIEW in the right panel (Input, Plan, etc.)
+        st.session_state.active_tab = "Input" 
     
     # KB State Machine
     if "kb_status" not in st.session_state:
@@ -252,6 +255,12 @@ def create_new_session(title: str = "New Chat") -> str:
     
     # Create empty session data
     session_data = {
+        "current_stage": "Input",
+        "has_input": False,
+        "plan": None,
+        "kb_count": 0,
+        "study_progress": 0,
+        "quiz_attempts": 0,
         "messages": [],
         "trace": [],
         "quiz": {
@@ -359,3 +368,83 @@ def set_kb_status(status: str, source: str = None, count: int = None, error: str
     if status == "ready":
         st.session_state.kb_info["ts"] = datetime.now().isoformat()
         st.session_state.kb_info["last_error"] = None
+
+# ============================================================================
+# Stage Logic (UI 2.0)
+# ============================================================================
+
+def calculate_stage_logic(session: Dict) -> Dict:
+    """
+    Pure function to calculate stage visibility, readiness, completion and banner content.
+    Prevents logic duplication across components.
+    """
+    if not session:
+        return {}
+
+    # 1. Core State Extraction
+    has_input = session.get("has_input", False)
+    plan_exists = session.get("plan") is not None
+    kb_count = session.get("kb_count", 0)
+    study_progress = session.get("study_progress", 0)
+    quiz_attempts = session.get("quiz_attempts", 0)
+    current_stage = session.get("current_stage", "Input")
+
+    # 2. Stage Guard & Status Definition
+    # Configuration for each stage
+    stages = {
+        "Input": {
+            "label": "准备",
+            "ready": True,
+            "done": has_input,
+            "block_msg": "",
+            "banner": "👋 欢迎！上传 PDF 或输入主题开始学习吧。",
+            "action": "input"
+        },
+        "Plan": {
+            "label": "规划",
+            "ready": has_input,
+            "done": plan_exists,
+            "block_msg": "请先输入学习主题或上传资料。",
+            "banner": "📋 资料已就绪。点击生成专属学习计划。",
+            "action": "generate_plan"
+        },
+        "Study": {
+            "label": "学习",
+            "ready": plan_exists or kb_count > 0,
+            "done": study_progress > 0,
+            "block_msg": "请先生成计划，或先通过对话沉淀一些知识点。",
+            "banner": "📖 已就绪。开始第一章学习？" if study_progress == 0 else "📖 继续上次的学习进度？",
+            "action": "start_study"
+        },
+        "Quiz": {
+            "label": "测验",
+            "ready": kb_count > 0 or (plan_exists and study_progress > 0),
+            "done": quiz_attempts > 0,
+            "block_msg": "先学习/沉淀一点内容，再来测验会更准。",
+            "banner": "📝 来一组小测验检验成果？（支持范围选择）",
+            "action": "start_quiz"
+        },
+        "Report": {
+            "label": "报告",
+            "ready": plan_exists or kb_count > 0 or quiz_attempts > 0,
+            "done": quiz_attempts > 0, # Or some other metric
+            "block_msg": "先生成计划或学习一点内容，报告才有数据。",
+            "banner": "📊 测验完成。查看你的学习进度报告。" if quiz_attempts > 0 else "📊 学习进度已记录。建议做一次测验生成更完整报告。",
+            "action": "view_report"
+        },
+        "Trace": {
+            "label": "追踪",
+            "ready": True,
+            "done": False,
+            "block_msg": "",
+            "banner": "🔍 实时查看 Agent 的思考过程与工具调用。",
+            "action": "view_trace"
+        }
+    }
+
+    # 3. Final Computation
+    return {
+        "stages": stages,
+        "current_stage": current_stage,
+        "kb_ready": kb_count > 0
+    }

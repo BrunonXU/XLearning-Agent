@@ -29,9 +29,18 @@ def main():
     # 3. Initialize State
     init_session_state()
     
+    
+    # 3.1 Handle Background Processing
+    # No longer needed here, moved to end.
+    pass
+    
     # 4. Render Layout
     render_sidebar()
     render_main_area()
+    
+    # 5. Handle Background Processing (Last step to allow UI to render first)
+    from src.ui.logic import process_pending_chat
+    process_pending_chat()
 
 if __name__ == "__main__":
     main()

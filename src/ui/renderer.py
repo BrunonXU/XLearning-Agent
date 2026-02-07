@@ -76,20 +76,33 @@ def _render_message(msg: dict):
     if role == "user":
         avatar = AGENT_AVATARS["user"]
         bubble_class = "user-bubble"
+    elif role == "system":
+        avatar = "⚙️"
+        bubble_class = "system-bubble"
     else:
         avatar = AGENT_AVATARS.get(agent, "🤖")
         bubble_class = "assistant-bubble"
     
-    # Render using custom HTML for a clean look
-    st.markdown(f"""
+    # Streaming / Loading State
+    loading_html = ""
+    if status == "streaming":
+        loading_html = '<span class="loading-dots">...</span>'
+        content = content + " " # Padding for dots
+    
+    # Sanitize content for HTML
+    display_content = content.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+    
+    # Prepare HTML shell
+    html_shell = f"""
     <div class="chat-row">
         <div class="avatar-icon">{avatar}</div>
-        <div class="chat-bubble {bubble_class}">
-            {f'<b>[{agent.upper()}]</b><br>' if agent else ''}
-            {content}
+        <div class="chat-bubble {bubble_class} {'streaming' if status == 'streaming' else ''}">
+            {f'<b>[{agent.upper()}]</b><br>' if agent and role != 'system' else ''}
+            {display_content} {loading_html}
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(html_shell, unsafe_allow_html=True)
     
     # For complex elements like citations or errors, use Streamlit components below the bubble
     if status == "error":
@@ -131,20 +144,19 @@ def _render_chat_input():
     if "chat_input_val" not in st.session_state:
         st.session_state.chat_input_val = ""
     
-    # Wider Input Container
-    c1, c2 = st.columns([12, 1])
-    with c1:
+    if not st.session_state.is_processing:
+        # User input field
         st.text_input(
             label="Message",
             placeholder=t("chat_placeholder"), 
-            value="", 
             key="chat_input_val",
-            on_change=on_input_change,
+            on_change=on_input_change
         )
-    with c2:
-        if st.button("🚀", key="send_btn_icon"):
+        if st.button("🚀 发送", key="send_btn_icon"):
             on_input_change()
             st.experimental_rerun()
+    else:
+        st.info("🕒 Agent 正在思考中，请稍候...")
 
 
 # ============================================================================
@@ -160,33 +172,30 @@ def render_brain_tab():
 
     st.markdown("### 🧠 记忆与知识 (Brain)")
     
-    c1, c2 = st.columns(2)
+    st.markdown("#### 📄 上传的上下文 (Context)")
+    kb_info = st.session_state.kb_info
+    if kb_info.get("source"):
+        st.success(f"**{kb_info['source']}**")
+        st.caption(f"Status: {st.session_state.kb_status} | Chunks: {kb_info.get('count', 0)}")
+    else:
+        st.info("当前会话未关联 PDF/URL。")
+        
+    st.markdown("---")
     
-    with c1:
-        st.markdown("#### 📄 上传的上下文 (Context)")
-        kb_info = st.session_state.kb_info
-        if kb_info.get("source"):
-            st.success(f"**{kb_info['source']}**")
-            st.caption(f"Status: {st.session_state.kb_status} | Chunks: {kb_info.get('count', 0)}")
-            st.caption(f"Indexed at: {kb_info.get('ts', 'N/A')}")
-        else:
-            st.info("当前会话未关联 PDF/URL。")
-            
-    with c2:
-        st.markdown("#### 📦 生成的产物 (Artifacts)")
-        # Check for report
-        report = st.session_state.current_session.get("report", {})
-        if report.get("generated"):
-            st.markdown(f"**📊 学习报告**")
-            st.download_button(
-                label="📥 下载 Markdown",
-                data=report.get("content", ""),
-                file_name="report.md",
-                mime="text/markdown",
-                key="brain_dl_report"
-            )
-        else:
-            st.info("暂无生成产物。")
+    st.markdown("#### 📦 生成的产物 (Artifacts)")
+    # Check for report
+    report = st.session_state.current_session.get("report", {})
+    if report.get("generated"):
+        st.markdown(f"**📊 学习报告**")
+        st.download_button(
+            label="📥 下载 Markdown",
+            data=report.get("content", ""),
+            file_name="report.md",
+            mime="text/markdown",
+            key="brain_dl_report"
+        )
+    else:
+        st.info("暂无生成产物。")
 
 # ============================================================================
 # Trace Tab
@@ -286,10 +295,24 @@ def render_quiz_tab():
     
     # Render each question
     for q in questions:
-        qid = q["qid"]
-        question_text = q["question"]
-        choices = q["choices"]
-        correct_idx = q["answer_index"]
+        qid = q.get("qid", "")
+        question_text = q.get("question", "")
+        # Compatible with both 'options' (new) and 'choices' (old)
+        choices = q.get("options", q.get("choices", []))
+        
+        # Handle correct answer (letter or index)
+        correct_answer = q.get("correct_answer")
+        correct_idx = q.get("answer_index", 0)
+        
+        if correct_answer and isinstance(correct_answer, str) and choices:
+            # Map 'A' -> 0
+            if correct_answer in ["A", "B", "C", "D"]:
+                mapping = {"A": 0, "B": 1, "C": 2, "D": 3}
+                correct_idx = mapping.get(correct_answer, 0)
+            # Or if correct_answer is the string itself match index
+            elif correct_answer in choices:
+                 correct_idx = choices.index(correct_answer)
+
         explanation = q.get("explanation", "")
         
         user_answer = answers.get(qid)
@@ -306,6 +329,7 @@ def render_quiz_tab():
                 index=user_answer if user_answer is not None else 0,
                 key=f"quiz_{qid}"
             )
+            # Store index
             answers[qid] = choices.index(selected)
         else:
             # Quiz completed - show results
@@ -345,8 +369,18 @@ def _score_quiz():
     wrong = []
     
     for q in questions:
-        qid = q["qid"]
-        correct_idx = q["answer_index"]
+        qid = q.get("qid")
+        
+        # Calculate correct index again
+        choices = q.get("options", q.get("choices", []))
+        correct_answer = q.get("correct_answer")
+        correct_idx = q.get("answer_index", 0)
+        
+        if correct_answer and isinstance(correct_answer, str):
+            if correct_answer in ["A", "B", "C", "D"]:
+                mapping = {"A": 0, "B": 1, "C": 2, "D": 3}
+                correct_idx = mapping.get(correct_answer, 0)
+        
         user_answer = answers.get(qid)
         
         if user_answer == correct_idx:

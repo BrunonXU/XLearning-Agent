@@ -28,6 +28,12 @@ st.session_state.is_processing = False
 
 # Mock Data
 st.session_state.current_session = {
+    "current_stage": "Input",
+    "has_input": True,
+    "plan": {"status": "mock"},
+    "kb_count": 10,
+    "study_progress": 1,
+    "quiz_attempts": 1,
     "title": "Smoke Test Session",
     "messages": [
         {"id": "1", "role": "user", "content": "Hello"},
@@ -40,7 +46,7 @@ st.session_state.current_session = {
     ],
     "quiz": {
         "questions": [
-            {"qid": "q1", "question": "Test Q?", "choices": ["A", "B"], "answer_index": 0}
+            {"qid": "q1", "question": "Test Q?", "options": ["A", "B"], "correct_answer": "A"}
         ],
         "answers": {},
         "wrong_questions": [],
@@ -52,8 +58,11 @@ st.session_state.current_session = {
     }
 }
 st.session_state.session_index = [
-    {"id": "test_session", "title": "Test Session", "created_at": "...", "updated_at": "..."}
+    {"id": "test_session", "title": "Test Session", "created_at": "...", "updated_at": "...", "last_preview": "Hello"}
 ]
+st.session_state.ui_mode = "guided"
+st.session_state.dev_mode = True
+st.session_state.active_tab = "Input"
 
 import src.ui.layout as layout
 import src.ui.renderer as renderer

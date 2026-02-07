@@ -1,0 +1,141 @@
+{
+  "current_stage": "Input",
+  "has_input": true,
+  "plan": {
+    "status": "generated"
+  },
+  "kb_count": 1,
+  "study_progress": 1,
+  "quiz_attempts": 1,
+  "messages": [
+    {
+      "id": "msg_70018d",
+      "role": "system",
+      "agent": "validator",
+      "content": "✅ 已处理 PDF: Project source code (integrated UE5 version, 4 levels):\n- 共 1 页\n- 已生成 1 个知识切片",
+      "status": "complete",
+      "parent_step_id": null,
+      "error": null,
+      "citations": [],
+      "ts": "2026-02-08T01:38:24.995454"
+    },
+    {
+      "id": "msg_e9e808",
+      "role": "assistant",
+      "agent": "tutor",
+      "content": "📋 **阶段 1: 生成学习计划**\n\n✅ 学习计划已生成！\n\n# 开始分析做计划吧 学习计划\n\n**目标**: 能熟练使用\n**预计时长**: 2 周\n\n## 前置知识\n- 基础编程知识\n\n## 学习阶段\n\n### ⬜ 阶段 1: 基础概念 (3 天)\n\n- 核心概念\n- 基础语法\n- 基本使用\n\n### ⬜ 阶段 2: 进阶学习 (4 天)\n\n- 高级特性\n- 最佳实践\n- 常见模式\n\n### ⬜ 阶段 3: 实战应用 (4 天)\n\n- 项目实践\n- 问题解决\n- 性能优化\n\n### ⬜ 阶段 4: 总结巩固 (3 天)\n\n- 知识回顾\n- 查漏补缺\n- 项目展示\n\n\n---\n\n🎓 **阶段 2: 开始学习**\n\n学习计划已生成，你可以开始提问或开始测验。\n\n\n---\n\n✅ **阶段 3: 知识验证**\n\n📝 **开始测验：Project source code (integrated UE5 version, 4 levels)**\n\n共 5 道题目\n\n---\n\n**题目 1**: 在 Unreal Engine 5 的项目中，哪一部分负责管理游戏的核心逻辑和行为？\n\nA. A. 蓝图系统\nB. B. C++ 类\nC. C. 场景文件\nD. D. 材质编辑器\n\n\n---\n\n📊 **流程完成！**\n\n你可以查看进度报告，或继续学习。",
+      "status": "complete",
+      "parent_step_id": null,
+      "error": null,
+      "citations": [],
+      "ts": "2026-02-08T01:38:24.999457"
+    },
+    {
+      "id": "msg_2b348f",
+      "role": "assistant",
+      "agent": "orchestrator",
+      "content": "正在思考中...",
+      "status": "streaming",
+      "parent_step_id": null,
+      "error": null,
+      "citations": [],
+      "ts": "2026-02-08T01:42:33.585327"
+    },
+    {
+      "id": "msg_518c85",
+      "role": "assistant",
+      "agent": "orchestrator",
+      "content": "正在思考中...",
+      "status": "streaming",
+      "parent_step_id": null,
+      "error": null,
+      "citations": [],
+      "ts": "2026-02-08T01:44:08.860727"
+    }
+  ],
+  "trace": [],
+  "quiz": {
+    "questions": [
+      {
+        "qid": "q1",
+        "question": "Python 中用于定义函数的关键字是？",
+        "options": [
+          "func",
+          "def",
+          "function",
+          "define"
+        ],
+        "correct_answer": "B",
+        "explanation": "在 Python 中，使用 `def` 关键字来定义函数。"
+      },
+      {
+        "qid": "q2",
+        "question": "以下哪个数据结构是不可变的？",
+        "options": [
+          "List",
+          "Dictionary",
+          "Tuple",
+          "Set"
+        ],
+        "correct_answer": "C",
+        "explanation": "Tuple（元组）一旦创建就不能修改，是不可变序列。"
+      },
+      {
+        "qid": "q3",
+        "question": "如何获取列表 `my_list` 的长度？",
+        "options": [
+          "my_list.length()",
+          "length(my_list)",
+          "len(my_list)",
+          "my_list.size()"
+        ],
+        "correct_answer": "C",
+        "explanation": "内置函数 `len()` 用于获取序列（如列表、字符串）的长度。"
+      },
+      {
+        "qid": "q4",
+        "question": "RAG 系统中的 'R' 代表什么？",
+        "options": [
+          "Read",
+          "Retrieve",
+          "Reason",
+          "Rank"
+        ],
+        "correct_answer": "B",
+        "explanation": "RAG 代表 Retrieval-Augmented Generation（检索增强生成）。"
+      },
+      {
+        "qid": "q5",
+        "question": "Streamlit 的主要用途是什么？",
+        "options": [
+          "游戏开发",
+          "Web 应用快速开发",
+          "嵌入式系统",
+          "移动应用"
+        ],
+        "correct_answer": "B",
+        "explanation": "Streamlit 是一个开源 Python 库，用于快速构建和共享数据 Web 应用。"
+      }
+    ],
+    "answers": {
+      "q1": 0,
+      "q2": 0,
+      "q3": 0,
+      "q4": 0,
+      "q5": 0
+    },
+    "wrong_questions": [
+      "q1",
+      "q2",
+      "q3",
+      "q4",
+      "q5"
+    ],
+    "score": 0
+  },
+  "report": {
+    "generated": false,
+    "content": "",
+    "ts": null
+  }
+}

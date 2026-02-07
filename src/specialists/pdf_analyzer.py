@@ -197,8 +197,9 @@ class PDFAnalyzer:
         parts.extend([
             "## 正文内容",
             "",
-            # 限制长度
-            pdf_content.content[:5000] if len(pdf_content.content) > 5000 else pdf_content.content,
+            "## 正文内容",
+            "",
+            pdf_content.content,
         ])
         
         return "\n".join(parts)
