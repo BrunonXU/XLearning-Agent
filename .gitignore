@@ -127,6 +127,8 @@ site/
 # User Data (用户学习数据，不应提交)
 # ===========================================
 ~/.learningAgent/
+data/sessions/
+data/index.json
 
 # ===========================================
 # Temporary Files

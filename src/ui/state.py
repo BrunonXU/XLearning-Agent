@@ -427,10 +427,12 @@ def calculate_stage_logic(session: Dict) -> Dict:
         "Report": {
             "label": "报告",
             "ready": plan_exists or kb_count > 0 or quiz_attempts > 0,
-            "done": quiz_attempts > 0, # Or some other metric
+            "done": session.get("report", {}).get("generated", False),
             "block_msg": "先生成计划或学习一点内容，报告才有数据。",
-            "banner": "📊 测验完成。查看你的学习进度报告。" if quiz_attempts > 0 else "📊 学习进度已记录。建议做一次测验生成更完整报告。",
-            "action": "view_report"
+            "banner": "🎉 全流程完成！查看你的学习成果总结。" if session.get("report", {}).get("generated") else (
+                "📊 测验完成。查看你的学习进度报告。" if quiz_attempts > 0 else "📊 学习进度已记录。建议做一次测验生成更完整报告。"
+            ),
+            "action": "view_completion" if session.get("report", {}).get("generated") else "view_report"
         },
         "Trace": {
             "label": "追踪",

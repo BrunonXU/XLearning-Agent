@@ -54,38 +54,56 @@ class LearningPlan(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     
     def to_markdown(self) -> str:
-        """转换为 Markdown 格式"""
-        lines = [
-            f"# {self.domain} 学习计划",
-            "",
-            f"**目标**: {self.goal}",
-            f"**预计时长**: {self.duration}",
-            "",
-        ]
+        """
+        转换为 Markdown 格式
         
-        if self.prerequisites:
-            lines.append("## 前置知识")
-            for prereq in self.prerequisites:
-                lines.append(f"- {prereq}")
-            lines.append("")
+        优先使用结构化数据生成格式化输出；
+        如果 phases 只有一个兜底阶段且有 raw_markdown，则展示 LLM 原始输出。
+        """
+        # 如果结构化解析成功（有多个真实阶段），生成格式化 Markdown
+        has_real_phases = len(self.phases) > 1 or (
+            len(self.phases) == 1 and self.phases[0].name != "完整学习计划" and self.phases[0].name != "学习计划"
+        )
         
-        lines.append("## 学习阶段")
-        lines.append("")
-        
-        for i, phase in enumerate(self.phases, 1):
-            status = "✅" if phase.completed else "⬜"
-            lines.append(f"### {status} 阶段 {i}: {phase.name} ({phase.duration})")
-            lines.append("")
-            for topic in phase.topics:
-                lines.append(f"- {topic}")
-            if phase.resources:
+        if has_real_phases:
+            lines = [
+                f"# {self.domain} 学习计划",
+                "",
+                f"**目标**: {self.goal}",
+                f"**预计时长**: {self.duration}",
+                "",
+            ]
+            
+            if self.prerequisites:
+                lines.append("## 前置知识")
+                for prereq in self.prerequisites:
+                    lines.append(f"- {prereq}")
                 lines.append("")
-                lines.append("**推荐资源:**")
-                for resource in phase.resources:
-                    lines.append(f"- {resource}")
+            
+            lines.append("## 学习阶段")
             lines.append("")
+            
+            for i, phase in enumerate(self.phases, 1):
+                status = "✅" if phase.completed else "⬜"
+                lines.append(f"### {status} 阶段 {i}: {phase.name} ({phase.duration})")
+                lines.append("")
+                for topic in phase.topics:
+                    lines.append(f"- {topic}")
+                if phase.resources:
+                    lines.append("")
+                    lines.append("**推荐资源:**")
+                    for resource in phase.resources:
+                        lines.append(f"- {resource}")
+                lines.append("")
+            
+            return "\n".join(lines)
         
-        return "\n".join(lines)
+        # 如果是兜底情况，展示 LLM 原始输出
+        if self.raw_markdown:
+            return f"# {self.domain} 学习计划\n\n{self.raw_markdown}"
+        
+        # 最终兜底
+        return f"# {self.domain} 学习计划\n\n**目标**: {self.goal}\n**预计时长**: {self.duration}"
 
 
 # ==================== Quiz 相关模型 ====================

@@ -79,6 +79,13 @@ cp .env.example .env
 streamlit run app.py
 ```
 
+> **Windows 免激活 venv 启动**：若 PowerShell 未激活虚拟环境，`streamlit` 可能报 `CommandNotFoundException`。使用以下任一方式即可：
+>
+> - 推荐：`venv\Scripts\python.exe -m streamlit run app.py`
+> - 一键脚本：`.\scripts\run_ui.ps1`（需在项目根目录执行）
+>
+> 启动前可运行 `python check_startup.py` 做自检。
+
 ---
 
 ## 📁 项目结构

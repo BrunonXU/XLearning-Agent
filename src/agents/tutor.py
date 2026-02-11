@@ -92,16 +92,31 @@ class TutorAgent(BaseAgent):
         use_rag: bool = True,
     ) -> str:
         """处理自由对话模式"""
-        # 构建上下文
+        # 1. 构建对话历史文本
+        history_text = ""
+        if history:
+            recent = history[-6:]  # 最近 6 轮，避免 Token 超限
+            parts = []
+            for h in recent:
+                role_label = "学生" if h.get("role") == "user" else "导师"
+                parts.append(f"{role_label}: {h.get('content', '')}")
+            history_text = "\n".join(parts)
+        
+        # 2. RAG 检索上下文
         context = ""
         if use_rag and self.rag_engine:
             self._emit_event("tool_start", self.name, f"Retrieving context for: {user_input[:50]}...")
             
             # --- 增强检索对于泛指词的命中 ---
             query = user_input
-            if any(kw in user_input for kw in ["paper", "document", "this", "论文", "文档", "这"]):
+            if any(kw in user_input for kw in ["paper", "document", "this", "论文", "文档", "这", "它"]):
                 # 如果用户指代不明，尝试通过附加关键词扩大检索范围
                 query += " summary introduction overview abstract"
+                # 如果有历史，用最后一轮的关键词补充
+                if history:
+                    last_assistant = [h for h in history if h.get("role") == "assistant"]
+                    if last_assistant:
+                        query += " " + last_assistant[-1].get("content", "")[:100]
             
             # 使用稍大的 k 值确保能检索到上下文
             context = self.rag_engine.build_context(query, k=5)
@@ -109,21 +124,23 @@ class TutorAgent(BaseAgent):
             self._emit_event("progress", self.name, f"Retrieved {len(context)//100 if context else 0} context chunks")
             self._emit_event("tool_end", self.name, "Context retrieval complete")
         
-        # 构建 prompt
-        if context:
-            prompt = f"""参考以下学习资料回答问题：
-
-{context}
-
----
-
-学生问题：{user_input}
-
-请基于以上资料回答，如果资料中没有相关信息，可以结合你的知识补充。"""
-        else:
-            prompt = f"学生问题：{user_input}"
+        # 3. 组装 prompt（历史 + 上下文 + 当前问题）
+        prompt_parts = []
         
-        # 调用 LLM
+        if history_text:
+            prompt_parts.append(f"以下是之前的对话记录，请注意理解上下文指代关系：\n\n{history_text}\n")
+        
+        if context:
+            prompt_parts.append(f"参考以下学习资料回答问题：\n\n{context}\n")
+        
+        prompt_parts.append(f"学生最新问题：{user_input}")
+        
+        if context:
+            prompt_parts.append("\n请基于以上资料和对话历史回答，如果资料中没有相关信息，可以结合你的知识补充。")
+        
+        prompt = "\n---\n".join(prompt_parts) if len(prompt_parts) > 1 else prompt_parts[0]
+        
+        # 4. 调用 LLM
         self._emit_event("progress", self.name, "Generating tutor response...")
         response = self._call_llm(prompt)
         self._emit_event("progress", self.name, "Response generated.")

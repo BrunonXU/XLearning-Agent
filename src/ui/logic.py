@@ -141,16 +141,43 @@ def process_pending_chat(should_rerun: bool = True):
         
         trace_callback("progress", "Orchestrator", "处理完成。")
         
-        # 7. Update Session Logic State
+        # 7. Update Session Logic State — 智能检测响应类型，同步 session 状态
         session = st.session_state.current_session
         if session:
             session["has_input"] = True
-            # Detection of plan generation
-            if "计划" in response or "📋" in response:
+            
+            # 检测是否生成了学习计划
+            if "学习计划" in response or "📋" in response or "阶段" in response:
                 session["plan"] = {"status": "generated"}
-            if "开始学习" in response or "学习" in user_input:
-                if session.get("plan"):
-                    session["study_progress"] = max(session.get("study_progress", 0), 1)
+            
+            # 检测是否进入学习阶段
+            if session.get("plan"):
+                session["study_progress"] = max(session.get("study_progress", 0), 1)
+            
+            # 检测是否触发了 Quiz（Chat 中输入"测验"等关键词）
+            if "开始测验" in response or "📝 **开始测验" in response:
+                # Orchestrator 通过 TutorAgent.start_quiz() 返回了测验内容
+                # 尝试从 Orchestrator 的 Tutor 获取当前 quiz 数据并同步到 session
+                try:
+                    tutor = orchestrator.tutor
+                    if tutor.current_quiz and tutor.current_quiz.questions:
+                        ui_questions = []
+                        for i, q in enumerate(tutor.current_quiz.questions):
+                            ui_questions.append({
+                                "qid": f"q{i+1}",
+                                "question": q.question,
+                                "options": q.options if q.options else ["A", "B", "C", "D"],
+                                "correct_answer": q.correct_answer,
+                                "explanation": q.explanation,
+                                "topic": q.topic,
+                            })
+                        session["quiz"]["questions"] = ui_questions
+                        session["quiz"]["score"] = None
+                        session["quiz"]["wrong_questions"] = []
+                        session["quiz"]["answers"] = {}
+                        session["quiz_attempts"] = session.get("quiz_attempts", 0) + 1
+                except Exception:
+                    pass  # Quiz 同步失败不影响主流程
 
     except Exception as e:
         err_trace = traceback.format_exc()
@@ -202,53 +229,125 @@ def handle_file_upload(file) -> None:
         st.error(f"Upload failed: {e}")
 
 def handle_generate_quiz() -> None:
-    """Generate a mock quiz for demonstration."""
-    from src.ui.state import save_session_data
+    """
+    生成测验 — 调用真实后端 Orchestrator → ValidatorAgent。
     
-    # Mock Quiz Data
-    mock_questions = [
-        {
-            "qid": "q1",
-            "question": "Python 中用于定义函数的关键字是？",
-            "options": ["func", "def", "function", "define"],
-            "correct_answer": "B",
-            "explanation": "在 Python 中，使用 `def` 关键字来定义函数。"
-        },
-        {
-            "qid": "q2",
-            "question": "以下哪个数据结构是不可变的？",
-            "options": ["List", "Dictionary", "Tuple", "Set"],
-            "correct_answer": "C",
-            "explanation": "Tuple（元组）一旦创建就不能修改，是不可变序列。"
-        },
-        {
-            "qid": "q3",
-            "question": "如何获取列表 `my_list` 的长度？",
-            "options": ["my_list.length()", "length(my_list)", "len(my_list)", "my_list.size()"],
-            "correct_answer": "C",
-            "explanation": "内置函数 `len()` 用于获取序列（如列表、字符串）的长度。"
-        },
-        {
-            "qid": "q4",
-            "question": "RAG 系统中的 'R' 代表什么？",
-            "options": ["Read", "Retrieve", "Reason", "Rank"],
-            "correct_answer": "B",
-            "explanation": "RAG 代表 Retrieval-Augmented Generation（检索增强生成）。"
-        },
-        {
-            "qid": "q5",
-            "question": "Streamlit 的主要用途是什么？",
-            "options": ["游戏开发", "Web 应用快速开发", "嵌入式系统", "移动应用"],
-            "correct_answer": "B",
-            "explanation": "Streamlit 是一个开源 Python 库，用于快速构建和共享数据 Web 应用。"
-        }
-    ]
+    将 ValidatorAgent 生成的 Quiz 对象转换为 UI session 格式，
+    确保 Quiz Tab 和 Chat 入口使用同一份数据。
+    """
+    from src.ui.state import save_session_data, add_trace_event
+    import uuid
     
-    if st.session_state.current_session:
-        st.session_state.current_session["quiz_attempts"] = st.session_state.current_session.get("quiz_attempts", 0) + 1
-        st.session_state.current_session["quiz"]["questions"] = mock_questions
+    if not st.session_state.current_session:
+        return
+    
+    st.session_state.is_processing = True
+    
+    try:
+        # 1. 获取 Orchestrator
+        def trace_callback(event_type, name, detail=""):
+            step_id = "quiz_" + uuid.uuid4().hex[:4]
+            add_trace_event(step_id, event_type, name, detail)
+        
+        orchestrator = get_orchestrator(on_event=trace_callback)
+        
+        # 2. 获取 RAG 内容作为出题参考
+        content = ""
+        if orchestrator.rag_engine:
+            content = orchestrator.rag_engine.build_context(
+                orchestrator.domain or "学习内容", k=3
+            )
+        
+        # 3. 调用 ValidatorAgent 生成真实 Quiz
+        quiz = orchestrator.validator.generate_quiz(
+            topic=orchestrator.domain or "学习测验",
+            content=content,
+            num_questions=5,
+        )
+        
+        # 4. 转换为 UI session 格式
+        ui_questions = []
+        for i, q in enumerate(quiz.questions):
+            ui_questions.append({
+                "qid": f"q{i+1}",
+                "question": q.question,
+                "options": q.options if q.options else ["A", "B", "C", "D"],
+                "correct_answer": q.correct_answer,
+                "explanation": q.explanation,
+                "topic": q.topic,
+            })
+        
+        # 5. 写入 session（Quiz Tab 和 Chat 共享这份数据）
+        st.session_state.current_session["quiz_attempts"] = (
+            st.session_state.current_session.get("quiz_attempts", 0) + 1
+        )
+        st.session_state.current_session["quiz"]["questions"] = ui_questions
         st.session_state.current_session["quiz"]["score"] = None
         st.session_state.current_session["quiz"]["wrong_questions"] = []
+        st.session_state.current_session["quiz"]["answers"] = {}
+        
+        # 6. 同时在聊天中显示 quiz 开始提示
+        quiz_msg = f"📝 **测验已生成：{quiz.topic}**\n\n共 {len(ui_questions)} 道题目，请切换到测验面板作答。"
+        add_message("assistant", quiz_msg, agent="validator")
         
         save_session_data(st.session_state.current_session_id, st.session_state.current_session)
+        
+    except Exception as e:
+        import traceback
+        add_message("assistant", f"⚠️ 测验生成失败: {str(e)}", agent="validator", status="error")
+        print(f"[Quiz Generation Error] {traceback.format_exc()}")
+    
+    finally:
+        st.session_state.is_processing = False
+        st.experimental_rerun()
+
+
+def handle_generate_report() -> None:
+    """
+    生成学习进度报告 — 调用真实后端 Orchestrator → ValidatorAgent。
+    
+    将 ProgressReport 写入 session，供 Report Tab 展示和下载。
+    """
+    from src.ui.state import save_session_data, add_trace_event
+    import uuid
+    
+    if not st.session_state.current_session:
+        return
+    
+    st.session_state.is_processing = True
+    
+    try:
+        # 1. 获取 Orchestrator
+        def trace_callback(event_type, name, detail=""):
+            step_id = "report_" + uuid.uuid4().hex[:4]
+            add_trace_event(step_id, event_type, name, detail)
+        
+        orchestrator = get_orchestrator(on_event=trace_callback)
+        
+        # 2. 调用 ValidatorAgent 生成报告
+        report = orchestrator.validator.generate_report(
+            domain=orchestrator.domain or "学习报告",
+            file_manager=orchestrator.file_manager,
+        )
+        
+        # 3. 写入 session
+        report_md = report.to_markdown()
+        st.session_state.current_session["report"] = {
+            "generated": True,
+            "content": report_md,
+            "ts": __import__("datetime").datetime.now().isoformat(),
+        }
+        
+        # 4. 聊天中也显示报告生成提示
+        add_message("assistant", f"📊 **学习进度报告已生成！**\n\n{report_md}", agent="validator")
+        
+        save_session_data(st.session_state.current_session_id, st.session_state.current_session)
+        
+    except Exception as e:
+        import traceback
+        add_message("assistant", f"⚠️ 报告生成失败: {str(e)}", agent="validator", status="error")
+        print(f"[Report Generation Error] {traceback.format_exc()}")
+    
+    finally:
+        st.session_state.is_processing = False
         st.experimental_rerun()
