@@ -22,8 +22,10 @@ Orchestrator - 协调器
 >  核心思想是'谁来做'和'怎么做'分离，调度层只负责路由。"
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Generator
 from enum import Enum
+import json
+import re
 
 from .base import BaseAgent
 from .planner import PlannerAgent
@@ -93,6 +95,10 @@ class Orchestrator:
         
         # 会话状态
         self.session_state: Optional[SessionState] = None
+
+        # 意图识别缓存：相同输入不重复调用 LLM
+        self._intent_cache: Dict[str, str] = {}
+        self._last_intent_meta: Dict[str, str] = {"source": "init", "intent": "ask_question"}
     
     def set_domain(self, domain: str):
         """设置学习领域"""
@@ -182,6 +188,7 @@ class Orchestrator:
         self,
         user_input: str,
         history: Optional[List[Dict[str, str]]] = None,
+        pre_detected_intent: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -190,16 +197,63 @@ class Orchestrator:
         mode_cn = "自动协调" if self.mode == OrchestratorMode.COORDINATED else "独立"
         self._emit_event("progress", "Orchestrator", f"正在以 {mode_cn} 模式启动")
         if self.mode == OrchestratorMode.COORDINATED:
-            return self._run_coordinated(user_input, history=history, **kwargs)
+            return self._run_coordinated(
+                user_input,
+                history=history,
+                pre_detected_intent=pre_detected_intent,
+                **kwargs
+            )
         else:
-            return self._run_standalone(user_input, history=history, **kwargs)
+            return self._run_standalone(
+                user_input,
+                history=history,
+                pre_detected_intent=pre_detected_intent,
+                **kwargs
+            )
 
-    def _run_standalone(self, user_input: str, history: Optional[List[Dict[str, str]]] = None, **kwargs) -> str:
+    def stream(
+        self,
+        user_input: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        **kwargs
+    ) -> Generator[str, None, None]:
+        """
+        流式处理用户输入。
+
+        仅在 Tutor Free 问答路径启用真正流式，其它意图退化为一次性输出。
+        """
+        intent = self._detect_intent(user_input)
+        ask_like = intent in {"ask_question", "chitchat"}
+
+        # Standalone + 问答：直接流式
+        if self.mode == OrchestratorMode.STANDALONE and ask_like:
+            yield from self.tutor.stream_response(user_input, history=history, use_rag=True)
+            return
+
+        # Coordinated + 问答：IDLE 时直接进入学习问答，不自动塞计划模板
+        if self.mode == OrchestratorMode.COORDINATED and ask_like:
+            if self.state == OrchestratorState.IDLE:
+                self.state = OrchestratorState.LEARNING
+                self._emit_event("progress", "Orchestrator", "进入学习阶段（问答优先，不自动生成计划）")
+            yield from self.tutor.stream_response(user_input, history=history, use_rag=True)
+            return
+
+        # 其它路径（plan/quiz/report）保持一次性逻辑
+        yield self.run(user_input, history=history, pre_detected_intent=intent, **kwargs)
+
+    def _run_standalone(
+        self,
+        user_input: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        pre_detected_intent: Optional[str] = None,
+        **kwargs
+    ) -> str:
         """
         单独模式：根据意图调用对应 Agent
         """
-        intent = self._detect_intent(user_input)
-        self._emit_event("progress", "IntentDetection", f"识别到的意图: {intent}")
+        intent = pre_detected_intent or self._detect_intent(user_input)
+        source = self._last_intent_meta.get("source", "unknown")
+        self._emit_event("progress", "IntentDetection", f"识别到的意图: {intent} (source={source})")
         
         if intent == "create_plan":
             return self._handle_create_plan(user_input)
@@ -213,30 +267,46 @@ class Orchestrator:
             # 默认当作问答处理
             return self._handle_ask_question(user_input, history=history)
     
-    def _run_coordinated(self, user_input: str, history: Optional[List[Dict[str, str]]] = None, **kwargs) -> str:
+    def _run_coordinated(
+        self,
+        user_input: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        pre_detected_intent: Optional[str] = None,
+        **kwargs
+    ) -> str:
         """
         协调模式：自动执行完整流程，同时响应用户意图
         """
-        intent = self._detect_intent(user_input)
-        self._emit_event("progress", "IntentDetection", f"协调模式意图识别: {intent}")
+        intent = pre_detected_intent or self._detect_intent(user_input)
+        source = self._last_intent_meta.get("source", "unknown")
+        self._emit_event(
+            "progress",
+            "IntentDetection",
+            f"协调模式意图识别: {intent} (source={source}, state={self.state})"
+        )
 
         # 如果用户明确提到“重新开始”或者切换了话题（简单检测）
-        if any(kw in user_input for kw in ["重新开始", "换个话题", "新课程"]):
+        if self._is_context_reset_signal(user_input):
             self.state = OrchestratorState.IDLE
             self._emit_event("progress", "Orchestrator", "已重置流程状态")
 
-        # 1. 如果处于初始状态，且意图是学习或问答，先触发规划
+        # 1. 初始状态下按意图分流：
+        # - create_plan：生成计划
+        # - ask_question/chitchat：直接问答（不强制插入计划模板）
+        # - 其它：按原有路由兜底
         if self.state == OrchestratorState.IDLE:
-            self.state = OrchestratorState.PLANNING
-            self._emit_event("progress", "Orchestrator", "进入规划阶段")
-            plan_msg = self._handle_create_plan(user_input)
-            
-            # 如果意图只是问个简单问题，规划完直接进入学习并回答
-            self.state = OrchestratorState.LEARNING
-            if intent == "ask_question":
-                answer = self._handle_ask_question(user_input, history=history)
-                return f"📋 **我已为您制定了学习计划：**\n\n{plan_msg}\n\n---\n\n🎓 **针对您的问题，我的解答如下：**\n\n{answer}"
-            return plan_msg
+            if intent == "create_plan":
+                self.state = OrchestratorState.PLANNING
+                self._emit_event("progress", "Orchestrator", "进入规划阶段")
+                plan_msg = self._handle_create_plan(user_input)
+                self.state = OrchestratorState.LEARNING
+                return plan_msg
+
+            # ask_question / chitchat：直接学习问答，不自动生成计划
+            if intent in {"ask_question", "chitchat"}:
+                self.state = OrchestratorState.LEARNING
+                self._emit_event("progress", "Orchestrator", "进入学习阶段（问答优先，不自动生成计划）")
+                return self._handle_ask_question(user_input, history=history)
 
         # 2. 如果已经在学习中，根据意图路由
         if intent == "start_quiz":
@@ -253,25 +323,98 @@ class Orchestrator:
     def _detect_intent(self, user_input: str) -> str:
         """
         意图识别
-        
-        简化版：基于关键词匹配（注意优先级，先检查更具体的）
-        TODO: 可以用 LLM 进行更智能的意图识别
-        
+
+        策略：
+        1) 优先读缓存（相同输入不重复分类）
+        2) 优先关键词（省 token，响应快）
+        3) 关键词无法判断时，调用 LLM 分类
+        4) LLM 失败时 fallback 为 ask_question
+
         面试话术：
-        > "意图识别是 Orchestrator 的入口。我用关键词匹配做初版，
-        >  按优先级检查：测验 > 报告 > 创建计划 > 问答。后续可以升级为 LLM 分类。"
+        > "意图识别使用了分层策略：缓存 + 关键词 + LLM 分类。
+        >  这样既保证低延迟和低成本，又能在模糊表达时提升准确率。"
         """
+        cache_key = user_input.strip().lower()
+        if cache_key in self._intent_cache:
+            intent = self._intent_cache[cache_key]
+            self._last_intent_meta = {"source": "cache", "intent": intent}
+            return intent
+
+        keyword_intent = self._detect_intent_by_keywords(user_input)
+        if keyword_intent:
+            self._intent_cache[cache_key] = keyword_intent
+            self._last_intent_meta = {"source": "keyword", "intent": keyword_intent}
+            return keyword_intent
+
+        llm_intent = self._detect_intent_by_llm(user_input)
+        if llm_intent:
+            self._intent_cache[cache_key] = llm_intent
+            self._last_intent_meta = {"source": "llm", "intent": llm_intent}
+            return llm_intent
+
+        # Fallback：保守地按问答处理
+        self._intent_cache[cache_key] = "ask_question"
+        self._last_intent_meta = {"source": "fallback", "intent": "ask_question"}
+        return "ask_question"
+
+    def _detect_intent_by_keywords(self, user_input: str) -> Optional[str]:
+        """关键词规则匹配（高置信度、低成本）"""
         input_lower = user_input.lower()
-        
-        # 优先级：测验 > 报告 > 创建计划 > 问答
-        if any(kw in input_lower for kw in ["测验", "quiz", "测试", "考试"]):
+
+        if any(kw in input_lower for kw in ["测验", "quiz", "测试", "考试", "出题", "题目"]):
             return "start_quiz"
-        elif any(kw in input_lower for kw in ["报告", "进度", "report", "progress"]):
+        if any(kw in input_lower for kw in ["报告", "进度", "report", "progress", "总结"]):
             return "get_report"
-        elif any(kw in input_lower for kw in ["计划", "plan", "学习"]):
+        if any(kw in input_lower for kw in ["生成计划", "学习计划", "plan for", "roadmap"]):
             return "create_plan"
-        else:
-            return "ask_question"
+        return None
+
+    def _detect_intent_by_llm(self, user_input: str) -> Optional[str]:
+        """LLM 分类（关键词无法覆盖时启用）"""
+        prompt = (
+            "请判断用户意图，并仅返回 JSON，不要输出其它内容。\n"
+            "可选 intent 只有：create_plan, ask_question, start_quiz, get_report, chitchat\n"
+            "JSON 格式：{\"intent\": \"...\"}\n\n"
+            f"用户输入：{user_input}"
+        )
+
+        try:
+            raw = self.tutor.llm.simple_chat(prompt, system_prompt=(
+                "你是一个意图分类器。"
+                "只能输出合法 JSON。"
+                "如果不确定，返回 ask_question。"
+            ))
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE).strip()
+
+            match = re.search(r"\{[\s\S]*\}", cleaned)
+            if match:
+                cleaned = match.group(0)
+
+            data = json.loads(cleaned)
+            intent = data.get("intent", "").strip()
+            if intent in {"create_plan", "ask_question", "start_quiz", "get_report", "chitchat"}:
+                lowered = user_input.lower()
+                # 保护策略：测验/报告必须显式触发，避免把“如何学习/如何复现”误判成出题或报告
+                if intent == "start_quiz" and not any(kw in lowered for kw in ["测验", "quiz", "测试", "考试", "出题", "题目"]):
+                    return "ask_question"
+                if intent == "get_report" and not any(kw in lowered for kw in ["报告", "进度", "report", "progress", "总结"]):
+                    return "ask_question"
+                return intent
+        except Exception:
+            return None
+
+        return None
+
+    def _is_context_reset_signal(self, user_input: str) -> bool:
+        """检测是否应重置流程状态（新话题/新项目）。"""
+        lowered = user_input.lower()
+        if any(kw in user_input for kw in ["重新开始", "换个话题", "新课程", "新项目", "从头开始", "复现"]):
+            return True
+        if "github.com/" in lowered:
+            return True
+        return False
     
     def _handle_create_plan(self, user_input: str) -> str:
         """处理创建计划请求"""
@@ -346,3 +489,8 @@ class Orchestrator:
         """重置状态"""
         self.state = OrchestratorState.IDLE
         self.session_state = None
+        self.domain = None
+        self.file_manager = None
+        self.rag_engine = None
+        self.tutor.set_rag_engine(None)
+        self._intent_cache = {}

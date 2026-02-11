@@ -17,6 +17,7 @@ from typing import Optional, List, Dict, Any, Generator
 from .base import BaseAgent
 from src.core.models import SessionMode, Quiz, Question
 from src.rag import RAGEngine
+from src.providers.base import Message
 
 
 class TutorAgent(BaseAgent):
@@ -54,7 +55,7 @@ class TutorAgent(BaseAgent):
         self.current_quiz: Optional[Quiz] = None
         self.quiz_progress = 0
     
-    def set_rag_engine(self, rag_engine: RAGEngine):
+    def set_rag_engine(self, rag_engine: Optional[RAGEngine]):
         """设置 RAG 引擎"""
         self.rag_engine = rag_engine
     
@@ -92,6 +93,20 @@ class TutorAgent(BaseAgent):
         use_rag: bool = True,
     ) -> str:
         """处理自由对话模式"""
+        prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=use_rag)
+        self._emit_event("progress", self.name, "Generating tutor response...")
+        response = self._call_llm(prompt)
+        self._emit_event("progress", self.name, "Response generated.")
+        
+        return response
+
+    def _build_free_mode_prompt(
+        self,
+        user_input: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        use_rag: bool = True,
+    ) -> str:
+        """构建 Free 模式 Prompt，供普通调用和流式调用复用。"""
         # 1. 构建对话历史文本
         history_text = ""
         if history:
@@ -101,51 +116,36 @@ class TutorAgent(BaseAgent):
                 role_label = "学生" if h.get("role") == "user" else "导师"
                 parts.append(f"{role_label}: {h.get('content', '')}")
             history_text = "\n".join(parts)
-        
+
         # 2. RAG 检索上下文
         context = ""
         if use_rag and self.rag_engine:
             self._emit_event("tool_start", self.name, f"Retrieving context for: {user_input[:50]}...")
-            
-            # --- 增强检索对于泛指词的命中 ---
+
             query = user_input
             if any(kw in user_input for kw in ["paper", "document", "this", "论文", "文档", "这", "它"]):
-                # 如果用户指代不明，尝试通过附加关键词扩大检索范围
                 query += " summary introduction overview abstract"
-                # 如果有历史，用最后一轮的关键词补充
                 if history:
                     last_assistant = [h for h in history if h.get("role") == "assistant"]
                     if last_assistant:
                         query += " " + last_assistant[-1].get("content", "")[:100]
-            
-            # 使用稍大的 k 值确保能检索到上下文
+
             context = self.rag_engine.build_context(query, k=5)
-            
+
             self._emit_event("progress", self.name, f"Retrieved {len(context)//100 if context else 0} context chunks")
             self._emit_event("tool_end", self.name, "Context retrieval complete")
-        
+
         # 3. 组装 prompt（历史 + 上下文 + 当前问题）
         prompt_parts = []
-        
         if history_text:
             prompt_parts.append(f"以下是之前的对话记录，请注意理解上下文指代关系：\n\n{history_text}\n")
-        
         if context:
             prompt_parts.append(f"参考以下学习资料回答问题：\n\n{context}\n")
-        
         prompt_parts.append(f"学生最新问题：{user_input}")
-        
         if context:
             prompt_parts.append("\n请基于以上资料和对话历史回答，如果资料中没有相关信息，可以结合你的知识补充。")
-        
-        prompt = "\n---\n".join(prompt_parts) if len(prompt_parts) > 1 else prompt_parts[0]
-        
-        # 4. 调用 LLM
-        self._emit_event("progress", self.name, "Generating tutor response...")
-        response = self._call_llm(prompt)
-        self._emit_event("progress", self.name, "Response generated.")
-        
-        return response
+
+        return "\n---\n".join(prompt_parts) if len(prompt_parts) > 1 else prompt_parts[0]
     
     def _handle_quiz_mode(self, user_input: str) -> str:
         """处理测验模式"""
@@ -213,12 +213,26 @@ class TutorAgent(BaseAgent):
     ) -> Generator[str, None, None]:
         """
         流式输出回复
-        
-        TODO: 实现流式输出
         """
-        # 暂时用非流式实现
-        response = self.run(user_input, history=history, use_rag=use_rag)
-        yield response
+        prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=use_rag)
+        self._emit_event("progress", self.name, "Generating tutor response (streaming)...")
+
+        messages = [
+            Message(role="system", content=self.system_prompt),
+            Message(role="user", content=prompt),
+        ]
+
+        try:
+            for chunk in self.llm.stream(messages):
+                if chunk:
+                    yield chunk
+        except Exception:
+            # 流式失败时自动回退到非流式，保证稳定性
+            fallback = self._call_llm(prompt)
+            if fallback:
+                yield fallback
+        finally:
+            self._emit_event("progress", self.name, "Streaming response complete.")
     
     def answer(
         self,

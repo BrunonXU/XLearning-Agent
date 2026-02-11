@@ -103,6 +103,15 @@ def process_pending_chat(should_rerun: bool = True):
         # 4. Get or create orchestrator
         print("[DEBUG] Getting Orchestrator instance...")
         orchestrator = get_orchestrator(on_event=trace_callback)
+
+        # 防止跨会话污染：切换到新 session 时重置 Orchestrator 状态机与意图缓存
+        current_sid = st.session_state.get("current_session_id")
+        bound_sid = getattr(orchestrator, "_bound_session_id", None)
+        if current_sid and bound_sid != current_sid:
+            orchestrator.reset()
+            orchestrator._intent_cache = {}
+            orchestrator._bound_session_id = current_sid
+            trace_callback("progress", "Orchestrator", "检测到新会话，已重置状态机与意图缓存。")
         
         # Default to coordinated for now as it handles classification
         mode_str = "coordinated"
@@ -121,9 +130,27 @@ def process_pending_chat(should_rerun: bool = True):
             for m in raw_history[-10:]:
                 history.append({"role": m["role"], "content": m["content"]})
 
-        # 5. Execute Run
-        print(f"[DEBUG] Calling orchestrator.run with input length {len(user_input)} and history length {len(history)}...")
-        response = orchestrator.run(user_input, history=history)
+        # 5. Execute via unified stream entry:
+        # orchestrator.stream() 内部会对问答走流式，对计划/测验/报告自动退化为一次性输出。
+        print(f"[DEBUG] Processing input length {len(user_input)} with history length {len(history)}...")
+        trace_callback("progress", "Orchestrator", "正在生成回答...")
+
+        accumulated = ""
+        chunk_count = 0
+        for chunk in orchestrator.stream(user_input, history=history):
+            chunk_count += 1
+            accumulated += chunk
+            if st.session_state.current_session:
+                for msg in st.session_state.current_session["messages"]:
+                    if msg["id"] == msg_id:
+                        msg["content"] = accumulated
+                        msg["status"] = "streaming"
+                        msg["agent"] = "tutor"
+                        break
+        response = accumulated
+
+        if chunk_count > 1:
+            trace_callback("progress", "TutorAgent", f"流式输出完成（chunks={chunk_count}）")
         
         print(f"[DEBUG] Response received (length: {len(response) if response else 0})")
         

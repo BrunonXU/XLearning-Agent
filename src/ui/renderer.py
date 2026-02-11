@@ -296,7 +296,12 @@ def _render_chat_input():
         if user_input.strip():
             from src.ui.logic import handle_chat_input
             handle_chat_input(user_input, should_rerun=False)
-            st.session_state.chat_input_val = ""
+            # Streamlit 1.12 限制：组件实例化后不能直接改同 key 的 session_state
+            st.session_state.clear_chat_input = True
+
+    if st.session_state.get("clear_chat_input", False):
+        st.session_state.chat_input_val = ""
+        st.session_state.clear_chat_input = False
 
     if "chat_input_val" not in st.session_state:
         st.session_state.chat_input_val = ""

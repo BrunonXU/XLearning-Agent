@@ -251,30 +251,21 @@
 - [x] 降级处理
 - [ ] 导入 RAG（待验收自动导入链路）
 
-### P2-3. 升级意图识别为 LLM-based
+### P2-3. 升级意图识别为 LLM-based ✅
 - **文件**: `src/agents/orchestrator.py` → `_detect_intent()`
-- **问题**: 纯关键词匹配，容易误判
-- **修复方案**:
-  1. 用 LLM 做分类（一次额外调用，返回固定 JSON）
-  2. Prompt: "判断用户意图，返回 JSON: {intent: 'create_plan' | 'ask_question' | 'start_quiz' | 'get_report' | 'chitchat'}"
-  3. 保留关键词匹配作为 fallback（省 token）
-  4. 添加缓存（相同输入不重复调用）
+- **已完成**：缓存 + 关键词 + LLM 分类 + fallback 分层策略
 - **验收标准**: "帮我整理学习要点"不再误识别为 create_plan
-- [ ] LLM 意图分类 Prompt
-- [ ] Fallback 策略
-- [ ] 测试边界用例
+- [x] LLM 意图分类 Prompt
+- [x] Fallback 策略
+- [ ] 测试边界用例（待手动回归）
 
-### P2-4. 实现 Tutor 流式输出
+### P2-4. 实现 Tutor 流式输出 ✅
 - **文件**: `src/agents/tutor.py` → `stream_response()`，`src/ui/logic.py`
-- **问题**: 当前是一次性返回全部内容，用户等待体验差
-- **修复方案**:
-  1. 使用 LangChain ChatTongyi 的 `.stream()` 方法
-  2. 在 UI 端用占位符逐步更新内容
-  3. 只对 Tutor 的 Free 模式启用流式
+- **已完成**：Tutor Free 模式启用 `.stream()`，UI 端按 chunk 更新消息，流式失败自动回退非流式
 - **验收标准**: 回答逐字/逐句出现，类似 ChatGPT 体验
-- [ ] 实现真正的 stream_response
-- [ ] UI 端逐步更新
-- [ ] 测试流畅度
+- [x] 实现真正的 stream_response
+- [x] UI 端逐步更新
+- [ ] 测试流畅度（待手动回归）
 
 ---
 
