@@ -32,6 +32,18 @@ class TutorAgent(BaseAgent):
     
     system_prompt = """你是一个专业的 AI 学习导师。
 
+**首次对话规则（非常重要）**：
+当对话历史为空（即学生第一次发言）时：
+- 如果系统提示中包含用户已上传的文档信息，请直接基于文档内容回答学生的问题，不需要再询问学习目标。
+- 如果没有文档上下文，不要直接开始教学。你应该：
+  1. 简短友好地回应学生提到的主题（用学生自己的话，不要编造主题）
+  2. 询问学生的学习目的（为了面试？项目实战？还是纯兴趣了解？）
+  3. 询问学生当前的技术水平（零基础？有一定基础？还是想深入？）
+  4. 根据学生的回答再开始针对性教学
+
+**后续对话规则**：
+当对话历史不为空时，正常进行教学，不需要再次询问目标。
+
 你的教学风格是：
 - 耐心、友好、鼓励式教学
 - 用简单易懂的语言解释复杂概念
@@ -54,10 +66,16 @@ class TutorAgent(BaseAgent):
         self.current_mode = SessionMode.FREE
         self.current_quiz: Optional[Quiz] = None
         self.quiz_progress = 0
+        # 文档元信息：让 tutor 知道用户上传了什么文件
+        self.doc_meta: Optional[Dict[str, Any]] = None  # {"filename": "xxx.pdf", "title": "...", "chunks": 270}
     
     def set_rag_engine(self, rag_engine: Optional[RAGEngine]):
         """设置 RAG 引擎"""
         self.rag_engine = rag_engine
+    
+    def set_doc_meta(self, meta: Optional[Dict[str, Any]]):
+        """设置已上传文档的元信息，让 tutor 在回答时知道用户有文档"""
+        self.doc_meta = meta
     
     def run(
         self,
@@ -106,15 +124,42 @@ class TutorAgent(BaseAgent):
         history: Optional[List[Dict[str, str]]] = None,
         use_rag: bool = True,
     ) -> str:
-        """构建 Free 模式 Prompt，供普通调用和流式调用复用。"""
-        # 1. 构建对话历史文本
+        """构建 Free 模式 Prompt，供普通调用和流式调用复用。
+        
+        历史注入策略（滑动窗口 + 摘要压缩）：
+        - 最近 2 轮（4 条消息）：完整保留，保证指代词理解
+        - 更早的历史：只保留用户消息的前 80 字作为话题摘要，丢弃冗长的 assistant 回复
+        - 总共最多回溯 8 轮，避免 token 爆炸
+        """
+        # 1. 构建对话历史文本（滑动窗口 + 摘要压缩）
         history_text = ""
         if history:
-            recent = history[-6:]  # 最近 6 轮，避免 Token 超限
+            max_rounds = 16  # 最多 16 条消息（约 8 轮）
+            recent_full = 4   # 最近 4 条消息完整保留（约 2 轮）
+            
+            selected = history[-max_rounds:]
             parts = []
-            for h in recent:
+            
+            for i, h in enumerate(selected):
                 role_label = "学生" if h.get("role") == "user" else "导师"
-                parts.append(f"{role_label}: {h.get('content', '')}")
+                content = h.get("content", "")
+                
+                # 最近 recent_full 条完整保留
+                if i >= len(selected) - recent_full:
+                    # 但 assistant 回复也做长度限制，避免单条超长
+                    if h.get("role") == "assistant" and len(content) > 500:
+                        content = content[:500] + "...（回复已截断）"
+                    parts.append(f"{role_label}: {content}")
+                else:
+                    # 较早的历史：用户消息保留前 80 字，assistant 只保留一句话摘要
+                    if h.get("role") == "user":
+                        summary = content[:80] + ("..." if len(content) > 80 else "")
+                        parts.append(f"{role_label}: {summary}")
+                    else:
+                        # assistant 回复只取第一行或前 60 字
+                        first_line = content.split("\n")[0][:60]
+                        parts.append(f"{role_label}: {first_line}...")
+            
             history_text = "\n".join(parts)
 
         # 2. RAG 检索上下文
@@ -123,7 +168,16 @@ class TutorAgent(BaseAgent):
             self._emit_event("tool_start", self.name, f"Retrieving context for: {user_input[:50]}...")
 
             query = user_input
-            if any(kw in user_input for kw in ["paper", "document", "this", "论文", "文档", "这", "它"]):
+            # 当用户输入很短（如"分析""继续"）且有文档时，扩展为全局概述查询
+            is_short_doc_request = (
+                self.doc_meta
+                and len(user_input.strip()) <= 10
+                and any(kw in user_input for kw in ["分析", "概述", "总结", "介绍", "看看", "继续"])
+            )
+            if is_short_doc_request:
+                doc_title = self.doc_meta.get("title") or ""
+                query = f"{doc_title} summary introduction overview abstract table of contents structure"
+            elif any(kw in user_input for kw in ["paper", "document", "this", "论文", "文档", "这", "它"]):
                 query += " summary introduction overview abstract"
                 if history:
                     last_assistant = [h for h in history if h.get("role") == "assistant"]
@@ -137,6 +191,32 @@ class TutorAgent(BaseAgent):
 
         # 3. 组装 prompt（历史 + 上下文 + 当前问题）
         prompt_parts = []
+
+        # 首次对话标记：让 LLM 知道是否需要先询问学习目标
+        # 但如果有文档上下文（用户上传了 PDF），直接基于文档回答，不问学习目标
+        if not history_text and not (self.doc_meta and context):
+            prompt_parts.append("[系统提示：这是学生的第一条消息，请按照首次对话规则回复，先了解学习目的和水平。]")
+
+        # 文档上下文提示：让 LLM 明确知道用户已上传文档，RAG 内容就是文档内容
+        if self.doc_meta and context:
+            doc_name = self.doc_meta.get("filename") or self.doc_meta.get("title") or "文档"
+            doc_title = self.doc_meta.get("title") or doc_name
+            chunks = self.doc_meta.get("chunks", 0)
+            pages = self.doc_meta.get("pages", 0)
+            hint = (
+                f"[系统提示：用户已上传文档 [{doc_title}]（{doc_name}，{pages}页，{chunks} 个知识切片）。"
+                f"下方的参考资料全部来自该文档。当用户提到'这个pdf''这个文档''分析''继续'等，"
+                f"都是在指这份文档。请直接基于参考资料内容回答，不要说'没有PDF'或'没有文档'。"
+            )
+            # 如果用户请求"分析"且没有更具体的问题，引导给出文档概述
+            if any(kw in user_input for kw in ["分析", "概述", "总结", "介绍", "看看"]) and len(user_input.strip()) <= 15:
+                hint += (
+                    "\n用户希望了解这份文档的整体内容。请给出结构化的文档概述，包括："
+                    "1) 文档的主题和目的 2) 主要章节/模块 3) 核心概念和关键术语 4) 文档的适用场景。"
+                )
+            hint += "]"
+            prompt_parts.append(hint)
+
         if history_text:
             prompt_parts.append(f"以下是之前的对话记录，请注意理解上下文指代关系：\n\n{history_text}\n")
         if context:

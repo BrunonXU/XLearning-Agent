@@ -64,6 +64,7 @@ class TongyiProvider(LLMProvider):
         self._llm = ChatTongyi(
             model_name=model,
             dashscope_api_key=self._api_key,
+            request_timeout=60,
             **kwargs
         )
     

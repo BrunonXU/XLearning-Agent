@@ -96,8 +96,12 @@ class RAGEngine:
         )
     
     def _create_langchain_embedding(self):
-        """创建 LangChain 兼容的 Embedding 函数"""
-        # LangChain Chroma 需要一个有 embed_documents 和 embed_query 方法的对象
+        """
+        创建 LangChain 兼容的 Embedding 函数
+        
+        使用 DashScope text-embedding-v2（阿里云通义千问）。
+        如果 API 不可用，回退到本地 sentence-transformers（需能访问 HuggingFace）。
+        """
         from langchain_community.embeddings import DashScopeEmbeddings
         
         api_key = os.getenv("DASHSCOPE_API_KEY")
@@ -143,11 +147,20 @@ class RAGEngine:
             }
             metadatas.append(chunk_meta)
         
-        # 添加到向量库
-        ids = self._vectorstore.add_texts(
-            texts=chunks,
-            metadatas=metadatas,
-        )
+        # 添加到向量库（embedding 可能因 API 欠费等原因失败）
+        try:
+            ids = self._vectorstore.add_texts(
+                texts=chunks,
+                metadatas=metadatas,
+            )
+        except Exception as e:
+            err_msg = str(e)
+            if "Arrearage" in err_msg or "overdue" in err_msg.lower():
+                raise RuntimeError(
+                    "⚠️ DashScope API 账户欠费，无法生成向量。\n"
+                    "请前往 https://dashscope.console.aliyun.com/ 充值后重试。"
+                ) from e
+            raise RuntimeError(f"⚠️ 向量化失败: {err_msg}") from e
         
         return ids
     

@@ -134,55 +134,153 @@ class Orchestrator:
 
     def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
-        处理上传的文件
+        处理上传的文件（支持 PDF / Markdown / TXT / DOCX）
         
         面试话术：
-        > "process_file 是统一的文件处理入口。不管用户上传 PDF 还是其他文件，
+        > "process_file 是统一的文件处理入口。不管用户上传 PDF、Word 还是 Markdown，
         >  都会自动识别类型、提取内容、存入 RAG。"
-        
-        Args:
-            file_content: 文件二进制内容
-            filename: 文件名
-            
-        Returns:
-            处理结果字典
         """
-        from src.specialists.pdf_analyzer import PDFAnalyzer
-        
         self._emit_event("tool_start", "FileProcessor", f"Analyzing {filename}...")
-        
-        if filename.lower().endswith(".pdf"):
-            analyzer = PDFAnalyzer()
-            pdf_content = analyzer.analyze_from_bytes(file_content, filename)
-            
-            chunk_count = 0
-            # 导入 RAG
-            if self.rag_engine is None:
-                # Auto-initialize domain/RAG if not set
-                print(f"[Orchestrator] Auto-setting domain to: {pdf_content.title}")
-                self.set_domain(pdf_content.title or "default_domain")
+        lower = filename.lower()
 
-            if self.rag_engine:
-                ids = analyzer.import_to_rag(pdf_content, self.rag_engine)
-                chunk_count = len(ids)
-            
-            self._emit_event("tool_end", "FileProcessor", f"Successfully indexed {pdf_content.title} ({chunk_count} chunks)")
-            
-            return {
-                "success": True,
-                "message": f"✅ 已处理 PDF: {pdf_content.title}\n- 共 {pdf_content.total_pages} 页\n- 已生成 {chunk_count} 个知识切片",
-                "title": pdf_content.title,
-                "pages": pdf_content.total_pages,
-                "chunks": chunk_count
-            }
+        if lower.endswith(".pdf"):
+            return self._process_pdf(file_content, filename)
+        elif lower.endswith(".md") or lower.endswith(".txt"):
+            return self._process_text(file_content, filename)
+        elif lower.endswith(".docx"):
+            return self._process_docx(file_content, filename)
         else:
             self._emit_event("tool_end", "FileProcessor", f"Unsupported file type: {filename}")
-            # 其他文件类型暂不支持
             return {
                 "success": False,
                 "message": f"⚠️ 暂不支持 {filename} 的文件类型",
                 "chunks": 0
             }
+
+    def _process_pdf(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+        """处理 PDF 文件"""
+        from src.specialists.pdf_analyzer import PDFAnalyzer
+
+        analyzer = PDFAnalyzer()
+        pdf_content = analyzer.analyze_from_bytes(file_content, filename)
+
+        chunk_count = 0
+        if self.rag_engine is None:
+            print(f"[Orchestrator] Auto-setting domain to: {pdf_content.title}")
+            self.set_domain(pdf_content.title or "default_domain")
+
+        if self.rag_engine:
+            try:
+                ids = analyzer.import_to_rag(pdf_content, self.rag_engine)
+                chunk_count = len(ids)
+            except (RuntimeError, Exception) as e:
+                self._emit_event("tool_end", "FileProcessor", f"RAG import failed: {e}")
+                return {
+                    "success": False,
+                    "message": f"⚠️ PDF 解析成功但向量化失败: {e}",
+                    "chunks": 0
+                }
+
+        self._emit_event("tool_end", "FileProcessor", f"Successfully indexed {pdf_content.title} ({chunk_count} chunks)")
+
+        self.tutor.set_doc_meta({
+            "filename": filename,
+            "title": pdf_content.title,
+            "pages": pdf_content.total_pages,
+            "chunks": chunk_count,
+        })
+
+        return {
+            "success": True,
+            "message": f"✅ 已处理 PDF: {pdf_content.title}\n- 共 {pdf_content.total_pages} 页\n- 已生成 {chunk_count} 个知识切片",
+            "title": pdf_content.title,
+            "pages": pdf_content.total_pages,
+            "chunks": chunk_count
+        }
+
+    def _process_text(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+        """处理 Markdown / TXT 文件"""
+        text = file_content.decode("utf-8", errors="replace")
+        title = filename.rsplit(".", 1)[0]
+
+        # 尝试从 Markdown 提取标题
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                title = stripped[2:].strip()
+                break
+
+        return self._import_text_to_rag(text, title, filename)
+
+    def _process_docx(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+        """处理 Word .docx 文件"""
+        try:
+            import docx
+            import io
+            doc = docx.Document(io.BytesIO(file_content))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            text = "\n".join(paragraphs)
+            title = filename.rsplit(".", 1)[0]
+            # 用第一个非空段落作为标题
+            if paragraphs:
+                title = paragraphs[0][:80]
+        except ImportError:
+            self._emit_event("tool_end", "FileProcessor", "python-docx not installed")
+            return {
+                "success": False,
+                "message": "⚠️ 需要安装 python-docx 才能解析 Word 文档。\n运行: pip install python-docx",
+                "chunks": 0
+            }
+        except Exception as e:
+            self._emit_event("tool_end", "FileProcessor", f"DOCX parse error: {e}")
+            return {
+                "success": False,
+                "message": f"⚠️ Word 文档解析失败: {e}",
+                "chunks": 0
+            }
+
+        return self._import_text_to_rag(text, title, filename)
+
+    def _import_text_to_rag(self, text: str, title: str, filename: str) -> Dict[str, Any]:
+        """通用文本导入 RAG"""
+        if self.rag_engine is None:
+            print(f"[Orchestrator] Auto-setting domain to: {title}")
+            self.set_domain(title or "default_domain")
+
+        chunk_count = 0
+        if self.rag_engine:
+            metadata = {"source": title, "type": "document", "filename": filename}
+            try:
+                ids = self.rag_engine.add_document(text, metadata)
+                chunk_count = len(ids)
+            except RuntimeError as e:
+                self._emit_event("tool_end", "FileProcessor", f"RAG import failed: {e}")
+                return {
+                    "success": False,
+                    "message": str(e),
+                    "chunks": 0
+                }
+
+        line_count = len(text.split("\n"))
+        char_count = len(text)
+        ext = filename.rsplit(".", 1)[-1].upper()
+
+        self._emit_event("tool_end", "FileProcessor", f"Successfully indexed {title} ({chunk_count} chunks)")
+
+        self.tutor.set_doc_meta({
+            "filename": filename,
+            "title": title,
+            "pages": 0,
+            "chunks": chunk_count,
+        })
+
+        return {
+            "success": True,
+            "message": f"✅ 已处理 {ext} 文档: {title}\n- 共 {line_count} 行 / {char_count} 字符\n- 已生成 {chunk_count} 个知识切片",
+            "title": title,
+            "pages": 0,
+            "chunks": chunk_count
+        }
 
     def run(
         self,
@@ -222,6 +320,10 @@ class Orchestrator:
 
         仅在 Tutor Free 问答路径启用真正流式，其它意图退化为一次性输出。
         """
+        # 自动设置 domain（首次输入时）
+        if not self.domain and user_input.strip():
+            self.set_domain(user_input[:50])
+
         intent = self._detect_intent(user_input)
         ask_like = intent in {"ask_question", "chitchat"}
 
@@ -286,7 +388,7 @@ class Orchestrator:
         )
 
         # 如果用户明确提到“重新开始”或者切换了话题（简单检测）
-        if self._is_context_reset_signal(user_input):
+        if self.state != OrchestratorState.IDLE and self._is_context_reset_signal(user_input):
             self.state = OrchestratorState.IDLE
             self._emit_event("progress", "Orchestrator", "已重置流程状态")
 
@@ -365,8 +467,18 @@ class Orchestrator:
             return "start_quiz"
         if any(kw in input_lower for kw in ["报告", "进度", "report", "progress", "总结"]):
             return "get_report"
-        if any(kw in input_lower for kw in ["生成计划", "学习计划", "plan for", "roadmap"]):
+        if any(kw in input_lower for kw in ["生成计划", "学习计划", "plan for", "roadmap", "学习规划", "生成大纲"]):
             return "create_plan"
+        # "分析" + 文档/pdf 相关词 → 视为问答（让 tutor 基于 RAG 分析内容）
+        # 用户说"分析这个文档"是想看内容摘要，不是生成学习计划
+        if "分析" in input_lower:
+            return "ask_question"
+        # GitHub URL 视为"生成计划"意图（用户粘贴仓库链接，期望分析并生成计划）
+        if re.match(r'https?://github\.com/', input_lower):
+            return "create_plan"
+        # 简短的延续性输入（"继续"、"好的"、"下一步"等）→ 直接问答
+        if input_lower.strip() in {"继续", "好的", "下一步", "然后呢", "接着", "go on", "continue", "next"}:
+            return "ask_question"
         return None
 
     def _detect_intent_by_llm(self, user_input: str) -> Optional[str]:
@@ -417,26 +529,96 @@ class Orchestrator:
         return False
     
     def _handle_create_plan(self, user_input: str) -> str:
-        """处理创建计划请求"""
+        """处理创建计划请求
+        
+        如果用户输入太笼统（没有具体主题），先让 Tutor 问清楚再生成。
+        """
+        # 判断用户是否给了足够的信息来生成计划
+        # GitHub URL：虽然有具体项目，但仍需了解用户的学习目标和水平
+        # 笼统请求（"帮我制定学习计划"）：需要问清楚主题
+        vague_patterns = [
+            "学习计划", "制定计划", "生成计划", "学习规划", "生成大纲",
+            "plan", "roadmap", "帮我规划", "做一个计划", "做个计划",
+        ]
+        input_stripped = user_input.strip()
+        
+        # GitHub URL 也需要先问清楚学习目标
+        is_github_url = bool(re.match(r'https?://github\.com/', input_stripped))
+        is_vague_text = (
+            len(input_stripped) <= 20
+            and any(kw in input_stripped for kw in vague_patterns)
+        )
+        
+        needs_clarification = is_vague_text or is_github_url
+        
+        if needs_clarification:
+            has_doc = bool(self.rag_engine)
+            if is_github_url:
+                # 提取项目名
+                proj_match = re.search(r'github\.com/[\w-]+/([\w-]+)', input_stripped)
+                proj_name = proj_match.group(1) if proj_match else "该项目"
+                clarify_prompt = (
+                    f"用户说：「{user_input}」\n\n"
+                    f"用户想学习 GitHub 项目「{proj_name}」。"
+                    "请友好地询问以下信息来定制学习计划：\n"
+                    "1. 学习目的是什么（面试？项目实战？兴趣？想贡献代码？）\n"
+                    "2. 当前对这个领域的了解程度如何？（零基础/有一定基础/比较熟悉）\n"
+                    "3. 希望多长时间完成学习？\n"
+                    "请用简洁友好的语气提问，不要一次问太多（2-3 个问题即可）。"
+                )
+            elif has_doc:
+                doc_title = ""
+                if hasattr(self.tutor, '_doc_meta') and self.tutor._doc_meta:
+                    doc_title = self.tutor._doc_meta.get("title", "")
+                clarify_prompt = (
+                    f"用户说：「{user_input}」\n\n"
+                    f"用户已上传了学习资料{f'「{doc_title}」' if doc_title else ''}，想制定学习计划。"
+                    "请友好地询问以下信息来定制计划：\n"
+                    "1. 学习目的是什么（面试？项目实战？兴趣？）\n"
+                    "2. 当前对这个主题的了解程度如何？\n"
+                    "3. 希望多长时间完成学习？\n"
+                    "请用简洁友好的语气提问，不要一次问太多（2-3 个问题即可）。"
+                )
+            else:
+                clarify_prompt = (
+                    f"用户说：「{user_input}」\n\n"
+                    "用户想制定学习计划但没有说明具体主题。请友好地询问：\n"
+                    "1. 想学什么主题/技术？\n"
+                    "2. 学习目的是什么（面试？项目实战？兴趣？）\n"
+                    "3. 当前水平如何？\n"
+                    "4. 希望多长时间完成？\n"
+                    "请用简洁友好的语气提问，不要一次问太多。"
+                )
+            return self.tutor.run(clarify_prompt)
+
         if not self.domain:
             self.set_domain(user_input[:50])  # 用输入的前 50 字符作为领域名
         
         # 0. 尝试从 RAG 获取上下文
         rag_context = ""
         if self.rag_engine:
-            # 简单策略：如果用户输入很短（如"生成计划"），则获取 RAG 中的全库摘要
-            # 如果用户输入具体（如"学习 Transformer"），则检索相关
-            if len(user_input) < 20: 
-                # 模拟全库摘要：获取任意一些切片
-                rag_context = self.rag_engine.build_context("summary overview", k=5)
+            # 始终获取全库摘要（确保 PDF 内容被纳入计划）
+            summary_ctx = self.rag_engine.build_context("summary overview", k=5)
+            # 如果用户输入具体，也检索相关内容
+            if len(user_input) >= 20:
+                specific_ctx = self.rag_engine.build_context(user_input, k=3)
+                # 合并：摘要 + 针对性检索（去重靠 LLM）
+                if specific_ctx and specific_ctx != summary_ctx:
+                    rag_context = summary_ctx + "\n\n" + specific_ctx
+                else:
+                    rag_context = summary_ctx
             else:
-                rag_context = self.rag_engine.build_context(user_input, k=5)
+                rag_context = summary_ctx
                 
         # 1. 构造输入给 Planner
         # 如果有 RAG 上下文，将其附在输入后
         planner_input = user_input
         if rag_context:
-            planner_input = f"用户目标: {user_input}\n\n参考资料内容:\n{rag_context}"
+            planner_input = (
+                f"用户目标: {user_input}\n\n"
+                f"【重要】以下是用户上传的学习资料内容，请务必基于这些内容生成计划，"
+                f"计划中的阶段和知识点必须来自资料中的实际内容：\n{rag_context}"
+            )
 
         plan = self.planner.run(planner_input)
         
@@ -493,4 +675,5 @@ class Orchestrator:
         self.file_manager = None
         self.rag_engine = None
         self.tutor.set_rag_engine(None)
+        self.tutor.set_doc_meta(None)
         self._intent_cache = {}

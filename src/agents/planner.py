@@ -111,7 +111,8 @@ class PlannerAgent(BaseAgent):
 
 要求：
 - phases 数量为 3-5 个，由浅入深
-- 每个 phase 的 topics 要具体，包含该学习内容的真实术语和概念
+- 每个 phase 的 topics 要具体，必须包含背景信息中提到的真实术语、章节名和概念
+- 如果背景信息中包含用户上传的资料内容，计划必须紧密围绕该资料的实际章节和知识点展开
 - prerequisites 列出实际需要的前置知识
 - 只输出 JSON，不要输出其他文字"""
         

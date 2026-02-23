@@ -13,11 +13,11 @@ def get_css() -> str:
     @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&family=Inter:wght@400;500;600&display=swap');
     
     :root {
-        --bg-color: #FEFDF9;
+        --bg-color: #FFFFFF;
         --text-primary: #38352F;
         --accent-color: #D97757;
         --sidebar-bg: #F4F3EF;
-        --sidebar-width: 420px;
+        --sidebar-width: 294px;
         /* docs/ui_mockups 附录配色 */
         --primary: #F97316;
         --success: #22C55E;
@@ -107,8 +107,11 @@ def get_css() -> str:
     .block-container {
         padding-right: 2rem !important;
         padding-left: 2rem !important;
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
         max-width: 100% !important;
         overflow-x: hidden !important;
+        overflow-y: hidden !important;
     }
     
     /* Sidebar Buttons（新对话、历史列表等） */
@@ -135,6 +138,45 @@ def get_css() -> str:
         color: #9CA3AF;
         padding: 12px 0;
         text-align: center;
+    }
+
+    /* 侧边栏对话列表 */
+    .sess-item {
+        font-size: 13px;
+        font-weight: 500;
+        color: #555;
+        padding: 7px 10px;
+        border-radius: 6px;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .sess-active {
+        background-color: #EAE9E4;
+        color: #000;
+        font-weight: 600;
+    }
+    /* 当前对话操作按钮（改名/删除）紧凑行内布局 */
+    .sess-actions-row {
+        display: flex;
+        gap: 6px;
+        margin: 2px 10px 6px 10px;
+    }
+    .sess-actions-row .sess-btn {
+        font-size: 12px;
+        padding: 2px 10px;
+        border: 1px solid #D1D5DB;
+        border-radius: 5px;
+        background: transparent;
+        color: #555;
+        cursor: pointer;
+        transition: background 0.15s;
+        line-height: 24px;
+    }
+    .sess-actions-row .sess-btn:hover {
+        background: #EAE9E4;
+        color: #000;
     }
     
     /* Tabs font size */
@@ -295,18 +337,25 @@ def get_css() -> str:
         padding: 0;
         background: transparent;
     }
-    .chat-input-wrap [data-testid="stTextArea"] {
+    .chat-input-wrap [data-testid="stTextArea"],
+    .chat-input-wrap [data-testid="stTextInput"] {
         background: #FFFFFF !important;
         border: 1px solid #E5E7EB !important;
         border-radius: 12px !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
     }
-    .chat-input-wrap textarea {
+    .chat-input-wrap textarea,
+    .chat-input-wrap input {
         background: #FFFFFF !important;
         font-size: 15px !important;
         line-height: 1.5 !important;
         padding: 12px 16px !important;
+    }
+    .chat-input-wrap textarea {
         min-height: 88px !important;
+    }
+    .chat-input-wrap input {
+        height: 48px !important;
     }
     .avatar-icon {
         font-size: 20px;
@@ -327,152 +376,92 @@ def get_css() -> str:
     .loading-dots { animation: blink 1.4s infinite both; font-weight: bold; }
 
     /* ================================================================
-       Stepper 固定吸顶（放大、美化）
+       隐藏 Streamlit 自带的 hamburger 菜单和页脚
        ================================================================ */
-    .stepper-fixed-spacer {
-        height: 72px !important;
-        margin: 0 !important;
-        flex-shrink: 0 !important;
+    #MainMenu { visibility: hidden !important; }
+    footer { visibility: hidden !important; display: none !important; }
+    header[data-testid="stHeader"] {
+        height: 0 !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
     }
-    .stepper-fixed-wrap {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        z-index: 999 !important;
-        margin-left: var(--sidebar-width) !important;
-        overflow: visible !important;
+    /* 去掉 Streamlit 底部多余空间 */
+    .block-container::after { display: none !important; }
+    [data-testid="stBottomBlockContainer"] { display: none !important; }
+
+    /* ================================================================
+       Stepper: tab bar 导航
+       5 列布局（空 | tab | tab | tab | 空），匹配 5 子元素的 HorizontalBlock
+       ================================================================ */
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) {
+        padding: 4px 0 2px 0 !important;
+        margin-bottom: 2px !important;
+        border-bottom: 1px solid #E5E7EB !important;
+        background: #FFFFFF !important;
     }
-    .stepper-container {
-        display: flex !important;
-        flex-direction: row !important;
-        justify-content: space-between !important;
-        align-items: center !important;
-        width: 100% !important;
-        min-width: 720px !important;
-        margin: 0 !important;
-        padding: 12px 6% !important;
-        gap: 0 4px;
-        background: linear-gradient(180deg, #FFFFFF 0%, #F9FAFB 100%) !important;
-        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
-        border-bottom: 1px solid #E5E7EB;
-        overflow: visible !important;
-    }
-    .stepper-item {
-        position: relative !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        flex: 1 0 auto !important;
-        min-width: 58px !important;
-        max-width: 90px !important;
-        z-index: 2 !important;
-        flex-shrink: 0 !important;
-    }
-    .stepper-circle {
-        width: 44px !important;
-        height: 44px !important;
-        border-radius: 50% !important;
-        background-color: #E5E7EB;
-        color: white;
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) .stButton > button {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: #9CA3AF !important;
+        font-size: 15px !important;
+        font-weight: 600 !important;
+        padding: 8px 12px !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        transition: all 0.15s ease !important;
+        width: auto !important;
+        min-height: 38px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        font-weight: 700;
-        font-size: 18px;
-        margin-bottom: 8px;
-        border: 2px solid #E5E7EB;
-        position: relative !important;
-        z-index: 3 !important;
+        margin: 0 auto !important;
     }
-    .stepper-item.active .stepper-circle {
-        background-color: var(--primary);
-        border-color: var(--primary);
-        box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.22);
-    }
-    .stepper-item.done .stepper-circle {
-        background-color: var(--success);
-        border-color: var(--success);
-    }
-    .stepper-label {
-        font-size: 13px;
-        font-weight: 600;
-        color: #9CA3AF;
-        white-space: nowrap;
-        overflow: visible;
-        text-overflow: clip;
-        position: relative !important;
-        z-index: 3 !important;
-    }
-    .stepper-item.active .stepper-label {
-        color: var(--primary);
-    }
-    .stepper-line {
-        position: absolute;
-        top: 22px;
-        height: 3px;
-        background-color: #E5E7EB;
-        width: calc(100% - 24px);
-        left: 50%;
-        z-index: 1;
-    }
-    .stepper-item:last-child .stepper-line {
-        display: none;
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) .stButton > button:hover {
+        background: #F3F4F6 !important;
+        color: #374151 !important;
     }
 
     /* ================================================================
-       工作区双列：聊天区 | 固定分隔线 | 准备面板
-       直接瞄准 Streamlit 列容器（恰好 2 列时第一列加右边框）
+       工作区双列：聊天区 | 固定分隔线 | 功能面板
+       两列独立滚动，互不影响
+       仅作用于主内容区（排除侧边栏）
+       注意：首页和工作区不会同时渲染，所以不会冲突
        ================================================================ */
-    /* 方案A: data-testid="column" (Streamlit >=1.28) */
-    [data-testid="column"]:first-child:nth-last-child(2) {
-        border-right: 2px solid #E5E7EB !important;
-        padding-right: 1.2rem !important;
+    /* 恰好 2 列的容器（主内容区） */
+    .block-container [data-testid="stHorizontalBlock"]:has(> :nth-child(2):last-child) {
+        flex-wrap: nowrap !important;
+        align-items: stretch !important;
+        gap: 0 !important;
     }
-    /* 方案B: stHorizontalBlock > div (旧版或不同结构) */
-    [data-testid="stHorizontalBlock"] > div:first-child:nth-last-child(2) {
+    /* 左列（聊天区）：独立滚动 + 右边框 */
+    .block-container [data-testid="stHorizontalBlock"]:has(> :nth-child(2):last-child) > :first-child {
         border-right: 2px solid #E5E7EB !important;
         padding-right: 1.2rem !important;
+        padding-bottom: 1rem !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        max-height: calc(100vh - 130px) !important;
+        min-width: 0 !important;
     }
-    /* 方案C: :has() 精确匹配恰好 2 列的容器 */
-    [data-testid="stHorizontalBlock"]:has(> :nth-child(2):last-child) > :first-child {
-        border-right: 2px solid #E5E7EB !important;
-        padding-right: 1.2rem !important;
+    /* 右列（功能面板）：独立滚动 */
+    .block-container [data-testid="stHorizontalBlock"]:has(> :nth-child(2):last-child) > :last-child {
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        padding-bottom: 1rem !important;
+        max-height: calc(100vh - 130px) !important;
+        min-width: 220px !important;
+        flex-shrink: 0 !important;
+        padding-left: 1.5rem !important;
     }
 
-    /* 右列面板吸顶 + 左边距（与灰色分隔线拉开距离） */
+    /* 右列面板内边距 */
     .right-panel-sticky {
-        position: sticky !important;
-        top: 72px !important;
-        align-self: flex-start !important;
-        padding-left: 1.5rem !important;
-    }
-    [data-testid="stHorizontalBlock"] > div:last-child {
-        position: sticky !important;
-        top: 72px !important;
-        align-self: flex-start !important;
-        padding-left: 1.5rem !important;
+        padding-left: 0 !important;
     }
 
-    /* ================================================================
-       Action Banner
-       ================================================================ */
-    .action-banner {
-        background-color: #FEF3C7;
-        border: 1px solid #FDE68A;
-        border-radius: 10px;
-        padding: 12px 18px;
-        margin-top: 20px;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-    .action-text {
-        font-size: 14px;
-        color: #92400E;
-        font-weight: 500;
-        line-height: 1.4;
-    }
+    /* Action Banner removed — navigation via stepper tabs */
 
     /* ================================================================
        Layout tweaks
@@ -495,11 +484,12 @@ def get_css() -> str:
     div[data-testid="stForm"] { border: none; padding: 0; }
 
     /* ================================================================
-       首页（去除多余白框感，与背景融合）
+       首页 — GPT 风格，纯白背景，大圆角输入框
        ================================================================ */
     .home-hero {
         text-align: center;
-        margin-bottom: 1.5rem;
+        margin-bottom: 2rem;
+        padding-top: 12vh;
     }
     .home-title {
         font-size: 1.8rem;
@@ -512,36 +502,120 @@ def get_css() -> str:
         font-size: 0.95rem;
     }
     .home-quick-label {
-        margin-top: 1.2rem;
+        max-width: 680px;
+        margin: 1.8rem auto 0.5rem;
         text-align: center;
         color: #9CA3AF;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }
-    .home-input-wrap {
-        background-color: var(--bg-color);
-        border-radius: 18px;
-        padding: 24px 28px 20px 28px;
-        border: 1px solid #E5E7EB;
-        max-width: 900px;
-        margin: 0 auto;
-        box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+
+    /* ===== GPT 风格输入栏：圆角药丸，+ 按钮在左 ===== */
+    /* 定位：紧跟 #home-chatbar-anchor 标记的 2 列容器 */
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] {
+        max-width: 680px !important;
+        margin: 0 auto !important;
+        background: #FFFFFF !important;
+        border: 1.5px solid #E5E7EB !important;
+        border-radius: 26px !important;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.05) !important;
+        padding: 4px 4px 4px 8px !important;
+        align-items: center !important;
+        flex-wrap: nowrap !important;
+        gap: 0 !important;
     }
-    .home-input-wrap [data-testid="stTextInput"] input,
-    .home-input-wrap textarea {
-        font-size: 16px !important;
-        background-color: #FFFFFF !important;
-        min-height: 80px !important;
+    /* 左列（+ 按钮）：圆形，紧凑 */
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :first-child {
+        flex: 0 0 42px !important;
+        max-width: 42px !important;
+        min-width: 42px !important;
+        padding: 0 !important;
+        border-right: none !important;
+        overflow: visible !important;
+        max-height: none !important;
     }
-    .home-input-wrap [data-testid="stFileUploaderDropzone"] {
-        background-color: #F9FAFB !important;
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :first-child .stButton > button {
+        width: 36px !important;
+        height: 36px !important;
+        min-height: 36px !important;
+        min-width: 36px !important;
+        padding: 0 !important;
+        border-radius: 50% !important;
+        background: #F3F4F6 !important;
         border: 1px solid #E5E7EB !important;
-        border-radius: 10px !important;
+        color: #6B7280 !important;
+        font-size: 18px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.15s !important;
+        margin: 0 !important;
     }
-    .home-input-wrap [data-testid="stForm"] {
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :first-child .stButton > button:hover {
+        background: #E5E7EB !important;
+        color: #374151 !important;
+    }
+    /* 右列（输入框）：无边框，透明 */
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :last-child {
+        flex: 1 !important;
+        padding: 0 !important;
+        border-right: none !important;
+        overflow: visible !important;
+        max-height: none !important;
+        min-width: 0 !important;
+    }
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :last-child [data-testid="stTextInput"] > label {
+        display: none !important;
+    }
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :last-child [data-testid="stTextInput"] > div {
         background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
     }
-    .home-input-wrap .stExpander {
-        margin-top: 0.5rem !important;
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :last-child input {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        font-size: 16px !important;
+        height: 48px !important;
+        padding: 0 16px 0 8px !important;
+        color: var(--text-primary) !important;
+    }
+    [data-testid="stMarkdown"]:has(#home-chatbar-anchor) + [data-testid="stHorizontalBlock"] > :last-child input:focus {
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+
+    /* 文件上传区域 — 居中 */
+    .block-container [data-testid="stFileUploader"] {
+        max-width: 680px !important;
+        margin: 8px auto 0 !important;
+    }
+
+    /* 快捷示例按钮 */
+    .home-quick-label + [data-testid="stHorizontalBlock"] .stButton > button,
+    .home-quick-label ~ [data-testid="stHorizontalBlock"] .stButton > button {
+        font-size: 13px !important;
+        padding: 6px 12px !important;
+        min-height: 34px !important;
+        border-radius: 8px !important;
+        background: #F9FAFB !important;
+        border: 1px solid #E5E7EB !important;
+        color: #374151 !important;
+        width: 100% !important;
+    }
+    .home-quick-label + [data-testid="stHorizontalBlock"] .stButton > button:hover,
+    .home-quick-label ~ [data-testid="stHorizontalBlock"] .stButton > button:hover {
+        background: #F3F4F6 !important;
+        border-color: #D1D5DB !important;
+    }
+    /* 快捷示例行居中 */
+    .home-quick-label + [data-testid="stHorizontalBlock"],
+    .home-quick-label ~ [data-testid="stHorizontalBlock"] {
+        max-width: 680px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
 
     /* ================================================================
@@ -612,6 +686,26 @@ def get_css() -> str:
         border: none;
         border-top: 1px solid #E5E7EB;
         margin: 20px 0;
+    }
+
+    /* ================================================================
+       Workspace Footer — 固定在页面底部
+       ================================================================ */
+    .workspace-footer {
+        position: fixed;
+        bottom: 0;
+        left: var(--sidebar-width);
+        right: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 0;
+        border-top: 1px solid #E5E7EB;
+        font-size: 12px;
+        color: #9CA3AF;
+        background: #FAFAFA;
+        z-index: 998;
     }
     </style>
     """

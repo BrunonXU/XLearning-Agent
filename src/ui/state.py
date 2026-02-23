@@ -114,11 +114,8 @@ def _atomic_write(path: Path, data: Any) -> None:
     """
     tmp_path = path.with_suffix(f".{uuid.uuid4().hex[:6]}.tmp")
     try:
-        # 1. Write to temp file
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-            
-        # 2. Retry rename loop (Windows anti-virus/indexer often locks files briefly)
         max_retries = 5
         for i in range(max_retries):
             try:
@@ -132,9 +129,7 @@ def _atomic_write(path: Path, data: Any) -> None:
                     raise
                 import time
                 time.sleep(0.1)
-                
     except Exception as e:
-        # Fallback: Direct write if atomic fails (risky but better than crashing)
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -142,7 +137,6 @@ def _atomic_write(path: Path, data: Any) -> None:
             print(f"Failed to save {path}: {e}")
             pass
     finally:
-        # Cleanup temp
         if tmp_path.exists():
             try:
                 os.remove(tmp_path)
@@ -164,24 +158,19 @@ def _read_json(path: Path, default: Any = None) -> Any:
 # ============================================================================
 
 def load_session_index() -> List[Dict]:
-    """Load session metadata index."""
     return _read_json(INDEX_FILE, [])
 
 def save_session_index(index: List[Dict]) -> None:
-    """Save session metadata index."""
     _atomic_write(INDEX_FILE, index)
 
 def get_session_path(session_id: str) -> Path:
-    """Get path to a session's full data file."""
     return SESSIONS_DIR / f"{session_id}.json"
 
 def load_session_data(session_id: str) -> Optional[Dict]:
-    """Load full session data (messages, trace, quiz, report)."""
     path = get_session_path(session_id)
     return _read_json(path, None)
 
 def save_session_data(session_id: str, data: Dict) -> None:
-    """Save full session data."""
     path = get_session_path(session_id)
     _atomic_write(path, data)
 
@@ -191,44 +180,31 @@ def save_session_data(session_id: str, data: Dict) -> None:
 
 def init_session_state() -> None:
     """Initialize all session_state keys with defaults."""
-    
-    # Control
     if "lang" not in st.session_state:
         st.session_state.lang = "zh"
     if "show_trace" not in st.session_state:
         st.session_state.show_trace = False
     if "dev_mode" not in st.session_state:
-        st.session_state.dev_mode = False # Toggle for Trace
+        st.session_state.dev_mode = False
     if "ui_mode" not in st.session_state:
-        st.session_state.ui_mode = "guided" # guided or free
+        st.session_state.ui_mode = "guided"
     if "current_session_id" not in st.session_state:
         st.session_state.current_session_id = None
+    # New 3-tab system: Plan, Study, Quiz
     if "active_tab" not in st.session_state:
-        # active_tab now represents the current VIEW in the right panel (Input, Plan, etc.)
-        st.session_state.active_tab = "Input" 
-    
-    # KB State Machine
+        st.session_state.active_tab = "Plan"
     if "kb_status" not in st.session_state:
-        st.session_state.kb_status = "idle"  # idle, parsing, chunking, ready, error
+        st.session_state.kb_status = "idle"
     if "kb_info" not in st.session_state:
         st.session_state.kb_info = {
-            "count": 0,
-            "ts": None,
-            "source": None,
-            "last_error": None
+            "count": 0, "ts": None, "source": None, "last_error": None
         }
-    
-    # Processing State
     if "is_processing" not in st.session_state:
         st.session_state.is_processing = False
     if "stop_requested" not in st.session_state:
         st.session_state.stop_requested = False
-    
-    # Session Index (Loaded from disk)
     if "session_index" not in st.session_state:
         st.session_state.session_index = load_session_index()
-    
-    # Current Session Data (Loaded on demand)
     if "current_session" not in st.session_state:
         st.session_state.current_session = None
 
@@ -237,116 +213,140 @@ def init_session_state() -> None:
 # ============================================================================
 
 def create_new_session(title: str = "New Chat") -> str:
-    """Create a new session and return its ID."""
     session_id = str(uuid.uuid4())[:8]
     now = datetime.now().isoformat()
-    
-    # Add to index
     meta = {
-        "id": session_id,
-        "title": title,
-        "created_at": now,
-        "updated_at": now,
-        "kb_summary": None,
-        "last_preview": ""
+        "id": session_id, "title": title,
+        "created_at": now, "updated_at": now,
+        "kb_summary": None, "last_preview": ""
     }
     st.session_state.session_index.insert(0, meta)
     save_session_index(st.session_state.session_index)
-    
-    # Create empty session data
     session_data = {
-        "current_stage": "Input",
-        "has_input": False,
-        "plan": None,
-        "kb_count": 0,
-        "study_progress": 0,
-        "quiz_attempts": 0,
-        "messages": [],
-        "trace": [],
-        "quiz": {
-            "questions": [],
-            "answers": {},
-            "wrong_questions": [],
-            "score": None
-        },
-        "report": {
-            "generated": False,
-            "content": "",
-            "ts": None
-        }
+        "current_stage": "Plan",
+        "has_input": False, "plan": None, "kb_count": 0,
+        "study_progress": 0, "quiz_attempts": 0,
+        "messages": [], "trace": [],
+        "quiz": {"questions": [], "answers": {}, "wrong_questions": [], "score": None},
+        "report": {"generated": False, "content": "", "ts": None},
+        "_day_completed": {},
     }
     save_session_data(session_id, session_data)
-    
-    # Set as current
     st.session_state.current_session_id = session_id
     st.session_state.current_session = session_data
-    
+    st.session_state.active_tab = "Plan"
     return session_id
 
 def switch_session(session_id: str) -> None:
-    """Switch to an existing session."""
     st.session_state.current_session_id = session_id
     st.session_state.current_session = load_session_data(session_id)
 
+def delete_session(session_id: str) -> None:
+    """Delete a session by ID."""
+    path = get_session_path(session_id)
+    if path.exists():
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    st.session_state.session_index = [
+        m for m in st.session_state.session_index if m["id"] != session_id
+    ]
+    save_session_index(st.session_state.session_index)
+    if st.session_state.current_session_id == session_id:
+        st.session_state.current_session_id = None
+        st.session_state.current_session = None
+
+
+def rename_session(session_id: str, new_title: str) -> None:
+    """Rename a session by ID."""
+    new_title = new_title.strip()
+    if not new_title:
+        return
+    for meta in st.session_state.session_index:
+        if meta["id"] == session_id:
+            meta["title"] = new_title
+            meta["updated_at"] = datetime.now().isoformat()
+            break
+    save_session_index(st.session_state.session_index)
+
+
+def clear_all_sessions() -> None:
+    """清除所有对话记录和缓存数据（含 ChromaDB 向量库）。"""
+    import shutil
+    # 1. 删除所有 session JSON 文件
+    if SESSIONS_DIR.exists():
+        for f in SESSIONS_DIR.glob("*.json"):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    # 2. 清空 index
+    save_session_index([])
+    # 3. 清理 ChromaDB 数据
+    chroma_dir = DATA_DIR / "chroma"
+    if chroma_dir.exists():
+        try:
+            shutil.rmtree(chroma_dir)
+            chroma_dir.mkdir(exist_ok=True)
+        except OSError:
+            pass
+    # 4. 重置 session state
+    st.session_state.session_index = []
+    st.session_state.current_session_id = None
+    st.session_state.current_session = None
+    st.session_state.active_tab = "Plan"
+    st.session_state.kb_status = "idle"
+    st.session_state.kb_info = {"count": 0, "ts": None, "source": None, "last_error": None}
+    # 5. 重置全局 Orchestrator（避免残留 RAG 引用）
+    try:
+        from src.ui.logic import _ORCHESTRATOR
+        import src.ui.logic as logic_module
+        if logic_module._ORCHESTRATOR is not None:
+            logic_module._ORCHESTRATOR.reset()
+            logic_module._ORCHESTRATOR = None
+    except Exception:
+        pass
+
 def get_current_messages() -> List[Dict]:
-    """Get messages for current session."""
     if st.session_state.current_session:
         return st.session_state.current_session.get("messages", [])
     return []
 
-def add_message(role: str, content: str, agent: str = None, 
+
+def add_message(role: str, content: str, agent: str = None,
                 citations: List = None, parent_step_id: str = None,
                 status: str = "complete") -> str:
-    """Add a message to the current session."""
     if not st.session_state.current_session:
         return None
-    
     msg_id = f"msg_{uuid.uuid4().hex[:6]}"
     msg = {
-        "id": msg_id,
-        "role": role,
-        "agent": agent,
-        "content": content,
-        "status": status,
-        "parent_step_id": parent_step_id,
-        "error": None,
-        "citations": citations or [],
-        "ts": datetime.now().isoformat()
+        "id": msg_id, "role": role, "agent": agent,
+        "content": content, "status": status,
+        "parent_step_id": parent_step_id, "error": None,
+        "citations": citations or [], "ts": datetime.now().isoformat()
     }
-    
     st.session_state.current_session["messages"].append(msg)
-    
-    # Update index preview
     for meta in st.session_state.session_index:
         if meta["id"] == st.session_state.current_session_id:
             meta["last_preview"] = content[:50] + "..." if len(content) > 50 else content
             meta["updated_at"] = datetime.now().isoformat()
             break
-    
-    # Persist
     save_session_data(st.session_state.current_session_id, st.session_state.current_session)
     save_session_index(st.session_state.session_index)
-    
     return msg_id
 
 def add_trace_event(step_id: str, event_type: str, name: str, detail: str = None) -> None:
-    """Add a trace event to the current session."""
     if not st.session_state.current_session:
         return
-    
     event = {
-        "step_id": step_id,
-        "type": event_type,  # tool_start, tool_end, progress
-        "name": name,
-        "detail": detail,
-        "ts": datetime.now().isoformat()
+        "step_id": step_id, "type": event_type, "name": name,
+        "detail": detail, "ts": datetime.now().isoformat()
     }
-    
     st.session_state.current_session["trace"].append(event)
     save_session_data(st.session_state.current_session_id, st.session_state.current_session)
 
 def clear_session_trace() -> None:
-    """Clear all trace events for the current session."""
     if not st.session_state.current_session:
         return
     st.session_state.current_session["trace"] = []
@@ -357,7 +357,6 @@ def clear_session_trace() -> None:
 # ============================================================================
 
 def set_kb_status(status: str, source: str = None, count: int = None, error: str = None) -> None:
-    """Update KB state machine."""
     st.session_state.kb_status = status
     if source is not None:
         st.session_state.kb_info["source"] = source
@@ -370,83 +369,44 @@ def set_kb_status(status: str, source: str = None, count: int = None, error: str
         st.session_state.kb_info["last_error"] = None
 
 # ============================================================================
-# Stage Logic (UI 2.0)
+# Stage Logic (Simplified 3-tab: Plan, Study, Quiz)
 # ============================================================================
 
 def calculate_stage_logic(session: Dict) -> Dict:
-    """
-    Pure function to calculate stage visibility, readiness, completion and banner content.
-    Prevents logic duplication across components.
-    """
+    """Calculate stage status for the simplified 3-tab stepper."""
     if not session:
         return {}
 
-    # 1. Core State Extraction
     has_input = session.get("has_input", False)
     plan_exists = session.get("plan") is not None
     kb_count = session.get("kb_count", 0)
     study_progress = session.get("study_progress", 0)
     quiz_attempts = session.get("quiz_attempts", 0)
-    current_stage = session.get("current_stage", "Input")
+    has_report = session.get("report", {}).get("generated", False)
 
-    # 2. Stage Guard & Status Definition
-    # Configuration for each stage
     stages = {
-        "Input": {
-            "label": "准备",
-            "ready": True,
-            "done": has_input,
-            "block_msg": "",
-            "banner": "👋 欢迎！上传 PDF 或输入主题开始学习吧。",
-            "action": "input"
-        },
         "Plan": {
             "label": "规划",
-            "ready": has_input,
-            "done": plan_exists,
-            "block_msg": "请先输入学习主题或上传资料。",
-            "banner": "📋 资料已就绪。点击生成专属学习计划。",
-            "action": "generate_plan"
+            "icon": "📋",
+            "ready": True,
+            "done": plan_exists or has_input,
         },
         "Study": {
             "label": "学习",
-            "ready": plan_exists or kb_count > 0,
+            "icon": "📖",
+            "ready": True,
             "done": study_progress > 0,
-            "block_msg": "请先生成计划，或先通过对话沉淀一些知识点。",
-            "banner": "📖 已就绪。开始第一章学习？" if study_progress == 0 else "📖 继续上次的学习进度？",
-            "action": "start_study"
         },
         "Quiz": {
             "label": "测验",
-            "ready": kb_count > 0 or (plan_exists and study_progress > 0),
-            "done": quiz_attempts > 0,
-            "block_msg": "先学习/沉淀一点内容，再来测验会更准。",
-            "banner": "📝 来一组小测验检验成果？（支持范围选择）",
-            "action": "start_quiz"
-        },
-        "Report": {
-            "label": "报告",
-            "ready": plan_exists or kb_count > 0 or quiz_attempts > 0,
-            "done": session.get("report", {}).get("generated", False),
-            "block_msg": "先生成计划或学习一点内容，报告才有数据。",
-            "banner": "🎉 全流程完成！查看你的学习成果总结。" if session.get("report", {}).get("generated") else (
-                "📊 测验完成。查看你的学习进度报告。" if quiz_attempts > 0 else "📊 学习进度已记录。建议做一次测验生成更完整报告。"
-            ),
-            "action": "view_completion" if session.get("report", {}).get("generated") else "view_report"
-        },
-        "Trace": {
-            "label": "追踪",
+            "icon": "📝",
             "ready": True,
-            "done": False,
-            "block_msg": "",
-            "banner": "🔍 实时查看 Agent 的思考过程与工具调用。",
-            "action": "view_trace"
-        }
+            "done": quiz_attempts > 0,
+        },
     }
 
-    # 3. Final Computation
     return {
         "stages": stages,
-        "current_stage": current_stage,
-        "kb_ready": kb_count > 0
+        "current_stage": session.get("current_stage", "Plan"),
+        "kb_ready": kb_count > 0,
     }
