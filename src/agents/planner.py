@@ -20,14 +20,18 @@ Planner Agent - 规划 Agent
 >  JSON 解析 → 正则提取 → raw_markdown 兜底，保证任何情况下都有输出。"
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import re
 import json
+import logging
 
 from .base import BaseAgent
-from src.core.models import LearningPlan, LearningPhase, LearningGoal
+from src.core.models import LearningPlan, LearningPhase, LearningDay, LearningGoal, SearchResult
 from src.specialists.repo_analyzer import RepoAnalyzer
 from src.specialists.pdf_analyzer import PDFAnalyzer, PDFContent
+from src.specialists.resource_searcher import ResourceSearcher
+
+logger = logging.getLogger(__name__)
 
 
 class PlannerAgent(BaseAgent):
@@ -45,7 +49,7 @@ class PlannerAgent(BaseAgent):
 你的任务是：
 1. 分析用户想要学习的内容
 2. 评估内容的复杂度和前置知识要求
-3. 制定一个结构化的学习计划，以 JSON 格式输出"""
+3. 制定一个以「天」为最小单位的结构化学习计划（Day 1, Day 2...），以 JSON 格式输出"""
     
     def run(
         self,
@@ -81,8 +85,8 @@ class PlannerAgent(BaseAgent):
             context = input_data
             self._emit_event("progress", self.name, "Processing text description...")
         
-        # 3. 生成计划（JSON 格式）
-        prompt = f"""请为以下学习内容制定学习计划。
+        # 3. 生成计划（JSON 格式，按天组织）
+        prompt = f"""请为以下学习内容制定学习计划，以「天」为最小单位组织。
 
 **学习主题**: {domain}
 **学习目标**: {goal}
@@ -96,23 +100,29 @@ class PlannerAgent(BaseAgent):
 {{
   "domain": "学习领域名称",
   "goal": "学习目标描述",
-  "duration": "预计总时长，如 2 周",
+  "total_days": 5,
   "prerequisites": ["前置知识1", "前置知识2"],
-  "phases": [
+  "days": [
     {{
-      "name": "阶段名称",
-      "duration": "阶段时长，如 3 天",
-      "topics": ["知识点1", "知识点2", "知识点3"],
-      "resources": ["推荐资源1"]
+      "day_number": 1,
+      "title": "当天学习主题",
+      "topics": ["知识点1", "知识点2", "知识点3"]
+    }},
+    {{
+      "day_number": 2,
+      "title": "当天学习主题",
+      "topics": ["知识点1", "知识点2"]
     }}
   ]
 }}
 ```
 
 要求：
-- phases 数量为 3-5 个，由浅入深
-- 每个 phase 的 topics 要具体，必须包含背景信息中提到的真实术语、章节名和概念
+- days 数量为 3-7 天，由浅入深
+- 每天的 title 要简洁明确，概括当天学习重点
+- 每天的 topics 要具体，必须包含背景信息中提到的真实术语、章节名和概念
 - 如果背景信息中包含用户上传的资料内容，计划必须紧密围绕该资料的实际章节和知识点展开
+- total_days 等于 days 数组的长度
 - prerequisites 列出实际需要的前置知识
 - 只输出 JSON，不要输出其他文字"""
         
@@ -122,7 +132,42 @@ class PlannerAgent(BaseAgent):
         # 4. 解析为结构化对象（三层防御）
         plan = self._parse_plan(domain, goal, plan_text)
         
+        # 5. 为每天搜索资源
+        plan = self._search_resources_for_plan(plan)
+        
         self._emit_event("tool_end", self.name, f"Plan generated for {plan.domain}")
+        return plan
+    
+    def _search_resources_for_plan(self, plan: LearningPlan) -> LearningPlan:
+        """
+        为学习计划中每天的主题搜索资源
+        
+        降级逻辑：搜索失败时标注"暂无推荐资源"，不阻塞计划生成
+        """
+        if not plan.days:
+            return plan
+        
+        try:
+            resource_searcher = ResourceSearcher()
+        except Exception as e:
+            logger.warning(f"[PlannerAgent] ResourceSearcher init failed: {e}, skipping resource search")
+            for day in plan.days:
+                if not day.resources:
+                    day.resources.append("暂无推荐资源")
+            return plan
+        
+        for day in plan.days:
+            try:
+                self._emit_event("progress", self.name, f"Searching resources for Day {day.day_number}: {day.title}")
+                results = resource_searcher.search(f"{plan.domain} {day.title}")
+                if results:
+                    day.resources.extend(results)
+                else:
+                    day.resources.append("暂无推荐资源")
+            except Exception as e:
+                logger.warning(f"[PlannerAgent] Resource search failed for Day {day.day_number}: {e}")
+                day.resources.append("暂无推荐资源")
+        
         return plan
     
     def _process_github_url(self, url: str) -> tuple:
@@ -199,18 +244,13 @@ class PlannerAgent(BaseAgent):
         2. 正则提取 — LLM 输出了带杂文的 JSON（如 "好的，以下是计划：{...}"）
         3. raw_markdown 兜底 — 完全解析失败，用 LLM 原始输出作为展示内容
         
-        面试话术：
-        > "我做了三层防御处理 LLM 输出不稳定的问题。第一层尝试直接 JSON 解析；
-        >  第二层用正则提取 JSON 块；第三层兜底用原始文本展示。
-        >  这样保证任何情况都不会白屏。"
+        新版本优先解析 days 结构，回退到 phases 结构以保持向后兼容。
         """
         parsed_data = None
         
         # ===== 第一层：直接 JSON 解析 =====
         try:
-            # 清理常见的 LLM 输出格式问题
             clean_text = plan_text.strip()
-            # 去除 markdown code fence
             if clean_text.startswith("```"):
                 clean_text = re.sub(r'^```(?:json)?\s*', '', clean_text)
                 clean_text = re.sub(r'\s*```$', '', clean_text)
@@ -224,7 +264,6 @@ class PlannerAgent(BaseAgent):
             if json_match:
                 try:
                     raw_json = json_match.group()
-                    # 修复 trailing comma（Qwen 常见问题）
                     raw_json = re.sub(r',\s*([}\]])', r'\1', raw_json)
                     parsed_data = json.loads(raw_json)
                 except (json.JSONDecodeError, ValueError):
@@ -238,19 +277,49 @@ class PlannerAgent(BaseAgent):
                 goal=goal,
                 goal_level=LearningGoal.USE,
                 duration="待定",
-                phases=[
-                    LearningPhase(
-                        name="完整学习计划",
-                        duration="详见下方",
+                total_days=1,
+                days=[
+                    LearningDay(
+                        day_number=1,
+                        title="完整学习计划",
                         topics=["详见 LLM 生成的完整计划"],
                     ),
                 ],
                 prerequisites=[],
-                raw_markdown=plan_text,  # 保留 LLM 原始输出用于展示
+                raw_markdown=plan_text,
             )
         
         # ===== 从 parsed_data 构建 LearningPlan =====
         try:
+            # 优先解析 days 结构（新格式）
+            if "days" in parsed_data and parsed_data["days"]:
+                days = []
+                for d in parsed_data["days"]:
+                    days.append(LearningDay(
+                        day_number=d.get("day_number", len(days) + 1),
+                        title=d.get("title", f"Day {len(days) + 1}"),
+                        topics=d.get("topics", []),
+                        resources=d.get("resources", []),
+                    ))
+                
+                if not days:
+                    days = [LearningDay(day_number=1, title="学习计划", topics=["详见完整计划"])]
+                
+                plan = LearningPlan(
+                    domain=parsed_data.get("domain", domain),
+                    goal=parsed_data.get("goal", goal),
+                    goal_level=LearningGoal.USE,
+                    duration=parsed_data.get("duration", ""),
+                    total_days=parsed_data.get("total_days", len(days)),
+                    days=days,
+                    prerequisites=parsed_data.get("prerequisites", []),
+                    raw_markdown=plan_text,
+                )
+                
+                self._emit_event("progress", self.name, f"Successfully parsed plan: {len(days)} days")
+                return plan
+            
+            # 回退到 phases 结构（旧格式兼容）
             phases = []
             for p in parsed_data.get("phases", []):
                 phases.append(LearningPhase(
@@ -260,7 +329,6 @@ class PlannerAgent(BaseAgent):
                     resources=p.get("resources", []),
                 ))
             
-            # 确保至少有一个阶段
             if not phases:
                 phases = [LearningPhase(name="学习计划", duration="待定", topics=["详见完整计划"])]
             
@@ -271,20 +339,20 @@ class PlannerAgent(BaseAgent):
                 duration=parsed_data.get("duration", "2 周"),
                 phases=phases,
                 prerequisites=parsed_data.get("prerequisites", []),
-                raw_markdown=plan_text,  # 同时保留原始输出
+                raw_markdown=plan_text,
             )
             
-            self._emit_event("progress", self.name, f"Successfully parsed plan: {len(phases)} phases")
+            self._emit_event("progress", self.name, f"Successfully parsed plan: {len(phases)} phases (legacy)")
             return plan
             
         except Exception as e:
-            # 构建对象出错也兜底
             self._emit_event("progress", self.name, f"Plan object build failed: {e}, using fallback")
             return LearningPlan(
                 domain=domain,
                 goal=goal,
                 goal_level=LearningGoal.USE,
                 duration="待定",
-                phases=[LearningPhase(name="学习计划", duration="待定", topics=["详见完整计划"])],
+                total_days=1,
+                days=[LearningDay(day_number=1, title="学习计划", topics=["详见完整计划"])],
                 raw_markdown=plan_text,
             )

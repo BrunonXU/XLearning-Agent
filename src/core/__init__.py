@@ -6,12 +6,14 @@ Core 模块 - 核心基础设施
 
 from .config import Config
 from .file_manager import FileManager
-from .models import LearningPlan, Quiz, ProgressReport
+from .models import LearningPlan, LearningDay, SearchResult, Quiz, ProgressReport
 
 __all__ = [
     "Config",
     "FileManager",
     "LearningPlan",
+    "LearningDay",
+    "SearchResult",
     "Quiz",
     "ProgressReport",
 ]

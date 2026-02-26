@@ -12,12 +12,17 @@ TODO (Day 5):
 - 实现流式输出
 """
 
+import logging
 from typing import Optional, List, Dict, Any, Generator
 
 from .base import BaseAgent
 from src.core.models import SessionMode, Quiz, Question
 from src.rag import RAGEngine
 from src.providers.base import Message
+from src.specialists.resource_searcher import ResourceSearcher
+from src.core.progress import ProgressTracker
+
+logger = logging.getLogger(__name__)
 
 
 class TutorAgent(BaseAgent):
@@ -68,6 +73,11 @@ class TutorAgent(BaseAgent):
         self.quiz_progress = 0
         # 文档元信息：让 tutor 知道用户上传了什么文件
         self.doc_meta: Optional[Dict[str, Any]] = None  # {"filename": "xxx.pdf", "title": "...", "chunks": 270}
+        # 资源搜索器和进度追踪器（可选注入）
+        self._resource_searcher: Optional[ResourceSearcher] = None
+        self._progress_tracker: Optional[ProgressTracker] = None
+        # 当前回复的来源追踪列表
+        self._current_sources: List[Dict[str, Any]] = []
     
     def set_rag_engine(self, rag_engine: Optional[RAGEngine]):
         """设置 RAG 引擎"""
@@ -76,6 +86,96 @@ class TutorAgent(BaseAgent):
     def set_doc_meta(self, meta: Optional[Dict[str, Any]]):
         """设置已上传文档的元信息，让 tutor 在回答时知道用户有文档"""
         self.doc_meta = meta
+
+    def set_resource_searcher(self, searcher: ResourceSearcher):
+        """设置资源搜索器"""
+        self._resource_searcher = searcher
+
+    def set_progress_tracker(self, tracker: ProgressTracker):
+        """设置进度追踪器"""
+        self._progress_tracker = tracker
+
+    def _reset_sources(self):
+        """重置当前回复的来源追踪列表"""
+        self._current_sources = []
+
+    def _track_source(self, source: Dict[str, Any]):
+        """记录一条来源信息"""
+        self._current_sources.append(source)
+
+    def _build_progress_context(self) -> str:
+        """构建进度上下文文本，注入到 prompt 中"""
+        if not self._progress_tracker:
+            return ""
+
+        try:
+            summary = self._progress_tracker.get_progress_summary()
+            if summary["total_days"] == 0:
+                return ""
+
+            parts = [
+                f"[学习进度上下文：总计 {summary['total_days']} 天，"
+                f"已完成 {summary['completed_days']} 天，"
+                f"进度 {summary['percentage']:.0%}。"
+            ]
+            if summary["current_day"] is not None:
+                parts.append(f"当前应学习第 {summary['current_day']} 天的内容。")
+            else:
+                parts.append("所有天数已完成。")
+
+            # 列出未完成的天
+            uncompleted = [d for d in summary["days"] if not d.completed]
+            if uncompleted:
+                topics = ", ".join(f"Day {d.day_number}: {d.title}" for d in uncompleted[:3])
+                parts.append(f"待学习: {topics}")
+                if len(uncompleted) > 3:
+                    parts.append(f"...等共 {len(uncompleted)} 天未完成")
+
+            return " ".join(parts) + "]"
+        except Exception as e:
+            logger.warning(f"[TutorAgent] Failed to build progress context: {e}")
+            return ""
+
+    def _try_resource_search(self, user_input: str) -> list:
+        """
+        检测用户输入是否为资源搜索请求，如果是则调用 ResourceSearcher。
+
+        Returns:
+            SearchResult 列表（如果不是搜索请求或搜索器不可用则返回空列表）
+        """
+        if not self._resource_searcher:
+            return []
+
+        # 资源搜索关键词检测
+        search_keywords = [
+            "搜索资源", "找资源", "推荐资源", "搜索更多",
+            "search resource", "find resource", "recommend",
+            "有什么资源", "有哪些资源", "学习资源",
+        ]
+        input_lower = user_input.lower()
+        is_search_request = any(kw in input_lower for kw in search_keywords)
+
+        if not is_search_request:
+            return []
+
+        try:
+            self._emit_event("tool_start", self.name, f"Searching resources for: {user_input[:50]}...")
+            results = self._resource_searcher.search(user_input)
+            self._emit_event("tool_end", self.name, f"Found {len(results)} resources")
+
+            # 来源追踪：记录搜索来源
+            if results:
+                platforms = list({r.platform for r in results})
+                self._track_source({
+                    "type": "search",
+                    "platforms": platforms,
+                    "query": user_input,
+                })
+
+            return results
+        except Exception as e:
+            logger.warning(f"[TutorAgent] Resource search failed: {e}")
+            return []
     
     def run(
         self,
@@ -110,13 +210,59 @@ class TutorAgent(BaseAgent):
         history: Optional[List[Dict[str, str]]] = None,
         use_rag: bool = True,
     ) -> str:
-        """处理自由对话模式"""
+        """处理自由对话模式，回复末尾追加参考来源区块"""
+        # 重置来源追踪
+        self._reset_sources()
+
+        # 检测是否为资源搜索请求，如果是则调用 ResourceSearcher
+        search_results = self._try_resource_search(user_input)
+
         prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=use_rag)
         self._emit_event("progress", self.name, "Generating tutor response...")
         response = self._call_llm(prompt)
         self._emit_event("progress", self.name, "Response generated.")
-        
+
+        # 如果有资源搜索结果，附加到回复中
+        if search_results:
+            resource_text = "\n\n🔍 推荐资源：\n"
+            for r in search_results:
+                resource_text += f"- [{r.title}]({r.url}) ({r.platform})\n"
+            response += resource_text
+
+        # 追加参考来源区块
+        reference_section = self._build_reference_section(self._current_sources)
+        response += reference_section
+
         return response
+    def _build_reference_section(self, sources: list) -> str:
+        """
+        构建「📎 参考来源」区块
+
+        Args:
+            sources: 来源列表，每项为 dict，包含 type（pdf/search/rag/ai）和详情
+                - pdf: {"type": "pdf", "filename": "...", "section": "..."}
+                - search: {"type": "search", "platforms": [...], "query": "..."}
+                - rag: {"type": "rag", "source": "..."}
+
+        Returns:
+            格式化的参考来源文本
+        """
+        if not sources:
+            return "\n\n📎 参考来源\n- 基于 AI 通用知识"
+
+        lines = ["\n\n📎 参考来源"]
+        for src in sources:
+            src_type = src.get("type", "")
+            if src_type == "pdf":
+                lines.append(f"- PDF: {src.get('filename', '未知文件')}, {src.get('section', '未知章节')}")
+            elif src_type == "search":
+                platforms = src.get("platforms", [])
+                query = src.get("query", "")
+                lines.append(f"- 搜索: {', '.join(platforms)} (关键词: \"{query}\")")
+            elif src_type == "rag":
+                lines.append(f"- RAG: 检索片段来自 {src.get('source', '未知来源')}")
+        return "\n".join(lines)
+
 
     def _build_free_mode_prompt(
         self,
@@ -189,8 +335,31 @@ class TutorAgent(BaseAgent):
             self._emit_event("progress", self.name, f"Retrieved {len(context)//100 if context else 0} context chunks")
             self._emit_event("tool_end", self.name, "Context retrieval complete")
 
-        # 3. 组装 prompt（历史 + 上下文 + 当前问题）
+            # 来源追踪：记录 RAG 检索结果
+            if context:
+                if self.doc_meta:
+                    # RAG 内容来自用户上传的 PDF
+                    self._track_source({
+                        "type": "pdf",
+                        "filename": self.doc_meta.get("filename", "未知文件"),
+                        "section": self.doc_meta.get("title", "相关章节"),
+                    })
+                else:
+                    # RAG 内容来自其他文档
+                    self._track_source({
+                        "type": "rag",
+                        "source": "RAG 知识库",
+                    })
+
+        # 3. 构建进度上下文
+        progress_context = self._build_progress_context()
+
+        # 4. 组装 prompt（历史 + 上下文 + 当前问题）
         prompt_parts = []
+
+        # 注入进度上下文
+        if progress_context:
+            prompt_parts.append(progress_context)
 
         # 首次对话标记：让 LLM 知道是否需要先询问学习目标
         # 但如果有文档上下文（用户上传了 PDF），直接基于文档回答，不问学习目标

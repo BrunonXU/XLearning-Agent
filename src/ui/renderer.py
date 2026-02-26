@@ -1,7 +1,7 @@
 """
 XLearning Agent - UI Renderer
 ==============================
-Handles: Chat Tab, Trace Tab, Quiz Tab, Report Tab rendering
+Handles: Chat Tab, Trace Tab, Resource Cards rendering
 Strictly compatible with Streamlit 1.12.0.
 """
 
@@ -176,6 +176,56 @@ def _markdown_to_html(text: str) -> str:
         parts.append('</ol>')
 
     return '\n'.join(parts)
+
+
+# ============================================================================
+# Resource Card
+# ============================================================================
+
+PLATFORM_ICONS = {
+    "bilibili": "🅱️",
+    "youtube": "▶️",
+    "google": "🔍",
+    "github": "🐙",
+    "xiaohongshu": "📕",
+    "wechat": "💬",
+}
+
+
+def render_resource_card(resource):
+    """渲染单张资源卡片。
+
+    Args:
+        resource: SearchResult 对象或字符串
+    """
+    from src.core.models import SearchResult
+
+    if isinstance(resource, str):
+        st.markdown(f"📎 {resource}")
+        return
+
+    if not isinstance(resource, SearchResult):
+        st.markdown(f"📎 {str(resource)}")
+        return
+
+    icon = PLATFORM_ICONS.get(resource.platform, "🔗")
+    safe_title = html.escape(resource.title)
+    safe_desc = html.escape(resource.description) if resource.description else ""
+    safe_url = html.escape(resource.url)
+    safe_platform = html.escape(resource.platform)
+    safe_type = html.escape(resource.type)
+
+    card_html = f"""
+    <div style="border:1px solid #E5E7EB;border-radius:10px;padding:12px 16px;margin-bottom:8px;background:#FAFAFA;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="background:#F3F4F6;padding:2px 8px;border-radius:12px;font-size:12px;">{icon} {safe_platform}</span>
+            <span style="background:#FFF7ED;color:#EA580C;padding:2px 8px;border-radius:12px;font-size:11px;">{safe_type}</span>
+        </div>
+        <a href="{safe_url}" target="_blank" style="font-weight:600;color:#1F2937;text-decoration:none;font-size:14px;">{safe_title}</a>
+        {"<p style='color:#6B7280;font-size:12px;margin:4px 0 0;'>" + safe_desc + "</p>" if safe_desc else ""}
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
 
 
 # ============================================================================
@@ -375,21 +425,39 @@ def _parse_daily_plan(content: str) -> list:
     for line in lines:
         s = line.strip()
 
-        # 匹配 Day 标题: ### 📅 第X天：XXX 或 ### 📅 Day X: XXX
+        # 匹配多种 Day 标题格式:
+        # ### 📅 第X天：XXX / ### Day X: XXX / ### Day X：XXX
+        # ## 第X天 XXX / **第X天** / 第X天：XXX
+        # - **Day X：Title** (列表项 + 加粗格式，LLM 常见输出)
         day_match = re.match(r'^#{2,3}\s*📅?\s*第?\s*(\d+)\s*天[：:]\s*(.+)', s)
         if not day_match:
-            day_match = re.match(r'^#{2,3}\s*📅?\s*Day\s*(\d+)[：:]\s*(.+)', s, re.IGNORECASE)
+            day_match = re.match(r'^#{2,3}\s*📅?\s*Day\s*(\d+)\s*[：:]\s*(.+)', s, re.IGNORECASE)
         if not day_match:
-            # 也匹配 "⬜ 阶段 X: ..." 格式
-            day_match = re.match(r'^#{2,3}\s*[⬜✓●]?\s*阶段\s*(\d+)[：:]\s*(.+)', s)
+            day_match = re.match(r'^#{2,3}\s*[⬜✓●✅]?\s*阶段\s*(\d+)\s*[：:]\s*(.+)', s)
+        if not day_match:
+            # 列表项 + 加粗: - **Day X：Title** 或 - **第X天：Title**
+            day_match = re.match(r'^[-*]\s+\*\*\s*Day\s*(\d+)\s*[：:]\s*(.+?)\*\*', s, re.IGNORECASE)
+        if not day_match:
+            day_match = re.match(r'^[-*]\s+\*\*\s*第?\s*(\d+)\s*天\s*[：:]\s*(.+?)\*\*', s)
+        if not day_match:
+            # 纯加粗: **Day X: Title** 或 **第X天: Title**
+            day_match = re.match(r'^\*\*\s*Day\s*(\d+)\s*[：:]\s*(.+?)\*\*', s, re.IGNORECASE)
+        if not day_match:
+            day_match = re.match(r'^\*\*\s*第?\s*(\d+)\s*天\s*[：:]\s*(.+?)\*\*', s)
+        if not day_match:
+            # 纯文本 "Day X: Title" 或 "第X天：Title"
+            day_match = re.match(r'^Day\s*(\d+)\s*[：:]\s*(.+)', s, re.IGNORECASE)
+        if not day_match:
+            day_match = re.match(r'^第\s*(\d+)\s*天\s*[：:]\s*(.+)', s)
 
         if day_match:
             if current_day:
                 days.append(current_day)
             day_num = int(day_match.group(1))
             title = day_match.group(2).strip()
-            # 清理标题中的天数标注 (3 天) 等
+            # 清理标题中的天数标注 (3 天) 等和尾部 **
             title = re.sub(r'\s*[\(（]\d+\s*天[\)）]', '', title)
+            title = re.sub(r'\*+$', '', title).strip()
             current_day = {
                 "day": day_num,
                 "title": title,
@@ -405,14 +473,22 @@ def _parse_daily_plan(content: str) -> list:
             continue
 
         # 检测 section 切换
-        if re.match(r'^\*\*任务\*\*|^-\s*\*\*任务\*\*|^任务', s):
+        if re.match(r'^\*\*任务\*\*|^-\s*\*\*任务\*\*|^任务|^\*\*学习内容\*\*|^\*\*学习任务\*\*|^\*\*每日学习重点\*\*', s):
             current_section = "tasks"
             continue
-        if re.match(r'^\*\*资源\*\*|^-\s*\*\*资源\*\*|^\*\*推荐资源|^资源', s):
+        if re.match(r'^\*\*资源\*\*|^-\s*\*\*资源\*\*|^\*\*推荐资源|^资源|^\*\*学习资源\*\*|^\*\*参考资源\*\*', s):
             current_section = "resources"
             continue
-        if re.match(r'^\*\*收获\*\*|^\*\*目标\*\*|^\*\*验收\*\*|^收获|^目标', s):
+        if re.match(r'^\*\*收获\*\*|^\*\*目标\*\*|^\*\*验收\*\*|^收获|^目标|^\*\*学习目标\*\*|^\*\*预期成果\*\*', s):
             current_section = "outcomes"
+            continue
+        # 检测 **目标**：xxx 或 **目标**: xxx 这种行内 section 标签
+        if re.match(r'^\*\*目标\*\*\s*[：:]', s):
+            current_section = "outcomes"
+            # 提取冒号后面的内容作为 outcome
+            after = re.sub(r'^\*\*目标\*\*\s*[：:]\s*', '', s).strip()
+            if after and current_day:
+                current_day["outcomes"].append(re.sub(r'\*\*(.+?)\*\*', r'\1', after))
             continue
 
         # 收集列表项（支持 `- item` 和 `  - sub-item` 缩进格式）
@@ -676,7 +752,7 @@ def _render_timeline(days: list, completed: dict, title: str = "学习计划"):
 
 
 def render_plan_panel():
-    """规划面板：学习资料 + 交互式时间线路线图 + 学习大纲 + 下载。"""
+    """规划面板：线性进度条 + 学习路线图 + 每日大纲（前3天展开）+ 查看全部。"""
     if not st.session_state.current_session:
         st.info("请先开始一个学习会话。")
         return
@@ -707,6 +783,19 @@ def render_plan_panel():
             # 获取完成状态
             completed = st.session_state.current_session.get("_day_completed", {})
 
+            # ===== 线性进度条 =====
+            total = len(days)
+            done_count = sum(1 for d in days if completed.get(str(d["day"]), False))
+            pct = done_count / max(total, 1)
+            pct_display = int(pct * 100)
+            st.markdown(f"📊 进度：{done_count}/{total} 天已完成 ({pct_display}%)")
+            st.progress(pct)
+
+            # 同步 study_progress
+            st.session_state.current_session["study_progress"] = done_count
+
+            st.markdown("---")
+
             # 获取标题
             doc_meta = st.session_state.current_session.get("_doc_meta")
             map_title = (doc_meta.get("title") if doc_meta else None) or "学习计划"
@@ -715,33 +804,57 @@ def render_plan_panel():
             st.markdown("#### 🗺️ 学习路线图")
             _render_timeline(days, completed, map_title)
 
-            # 进度统计
-            total = len(days)
-            done_count = sum(1 for d in days if completed.get(str(d["day"]), False))
-            if done_count > 0:
-                st.caption(f"📊 进度：{done_count}/{total} 天已完成")
-                # 同步 study_progress
-                st.session_state.current_session["study_progress"] = done_count
-            
-            # 标记完成（Streamlit 原生交互）
-            incomplete_days = [d for d in days if not completed.get(str(d["day"]), False)]
-            if incomplete_days:
-                next_day = incomplete_days[0]
-                if st.button(f"✅ 完成 Day {next_day['day']}", key="mark_day_done"):
-                    if "_day_completed" not in st.session_state.current_session:
-                        st.session_state.current_session["_day_completed"] = {}
-                    st.session_state.current_session["_day_completed"][str(next_day["day"])] = True
-                    st.session_state.current_session["study_progress"] = done_count + 1
-                    from src.ui.state import save_session_data
-                    save_session_data(st.session_state.current_session_id, st.session_state.current_session)
-                    st.experimental_rerun()
-            else:
+            # ===== 每日大纲（前3天直接展开，其余折叠） =====
+            st.markdown("#### 📋 每日大纲")
+
+            plan_resources = _get_plan_resources()
+
+            # 默认展示前 3 天
+            show_count = 3
+            for idx, d in enumerate(days):
+                day_num = d["day"]
+                is_done = completed.get(str(day_num), False)
+                status_icon = "✅" if is_done else "📅"
+                is_expanded = idx < show_count
+
+                with st.expander(f"{status_icon} Day {day_num}: {d['title']}", expanded=is_expanded):
+                    # 显示学习内容
+                    if d.get("tasks"):
+                        for task in d["tasks"]:
+                            st.markdown(f"- {task}")
+
+                    # 显示资源卡片
+                    day_resources = plan_resources.get(day_num, [])
+                    if day_resources:
+                        st.markdown("**📚 学习资源**")
+                        for res in day_resources:
+                            render_resource_card(res)
+                    elif d.get("resources"):
+                        st.markdown("**📚 学习资源**")
+                        for res in d["resources"]:
+                            _render_string_resource_card(res)
+
+                    # 完成按钮
+                    if not is_done:
+                        if st.button(f"✅ 完成 Day {day_num}", key=f"complete_day_{day_num}"):
+                            if "_day_completed" not in st.session_state.current_session:
+                                st.session_state.current_session["_day_completed"] = {}
+                            st.session_state.current_session["_day_completed"][str(day_num)] = True
+                            st.session_state.current_session["study_progress"] = done_count + 1
+                            _sync_progress_tracker(day_num)
+                            from src.ui.state import save_session_data
+                            save_session_data(st.session_state.current_session_id, st.session_state.current_session)
+                            st.experimental_rerun()
+                    else:
+                        st.success("已完成 ✓")
+
+            if done_count == total and total > 0:
                 st.success("🎉 全部完成！")
 
             st.markdown("---")
 
-            # 完整大纲折叠展示
-            with st.expander("📋 查看完整大纲", expanded=False):
+            # 查看全部大纲
+            with st.expander("📋 查看全部大纲", expanded=False):
                 st.markdown(plan_md)
 
             st.download_button(
@@ -757,7 +870,7 @@ def render_plan_panel():
         st.info("大纲已生成，详见左侧对话。")
     else:
         st.markdown("#### 📋 学习大纲")
-        st.info("在左侧对话中输入学习主题，或点击下方生成大纲。")
+        st.info("在左侧对话中输入学习主题，即可自动生成学习计划。")
         if st.session_state.is_processing:
             st.info("🕒 正在生成学习大纲，请稍候...")
         else:
@@ -776,12 +889,51 @@ def render_plan_panel():
                 handle_chat_input(plan_prompt)
 
 
+def _get_plan_resources() -> dict:
+    """从 session 中获取 LearningPlan 的资源数据，按 day_number 索引。
+
+    Returns:
+        {day_number: [resource, ...]} 字典
+    """
+    try:
+        plan_data = st.session_state.current_session.get("_learning_plan")
+        if not plan_data:
+            return {}
+        from src.core.models import LearningPlan, SearchResult
+        if isinstance(plan_data, dict):
+            plan = LearningPlan.model_validate(plan_data)
+        elif isinstance(plan_data, LearningPlan):
+            plan = plan_data
+        else:
+            return {}
+        result = {}
+        for day in plan.days:
+            result[day.day_number] = day.resources
+        return result
+    except Exception:
+        return {}
+
+
+def _sync_progress_tracker(day_number: int):
+    """尝试同步 ProgressTracker 的完成状态。"""
+    try:
+        from src.core.progress import ProgressTracker
+        sid = st.session_state.current_session_id
+        if sid:
+            tracker = ProgressTracker(session_id=sid)
+            tracker.load()
+            if tracker.days:
+                tracker.mark_day_completed(day_number)
+    except Exception:
+        pass
+
+
 # ============================================================================
 # Study Panel（学习阶段右侧面板）
 # ============================================================================
 
 def render_study_panel():
-    """学习面板：知识库状态 + 大纲进度 + 学习提示。"""
+    """学习面板：学习笔记 + 知识检测 + 学习统计。"""
     if not st.session_state.current_session:
         st.info("请先开始一个学习会话。")
         return
@@ -794,7 +946,7 @@ def render_study_panel():
         st.caption(f"状态: {'✅ 就绪' if st.session_state.kb_status == 'ready' else st.session_state.kb_status} | 切片: {kb_info.get('count', 0)}")
         st.markdown("---")
 
-    # ===== 学习进度 =====
+    # ===== 学习进度概览 =====
     cached_plan = st.session_state.current_session.get("_cached_plan_md")
     if cached_plan:
         days = _parse_daily_plan(cached_plan)
@@ -803,21 +955,269 @@ def render_study_panel():
         days = _parse_daily_plan(plan_md) if plan_md else []
 
     if days:
-        st.markdown("#### 📋 学习进度")
         completed = st.session_state.current_session.get("_day_completed", {})
         total = len(days)
         done_count = sum(1 for d in days if completed.get(str(d["day"]), False))
-        st.progress(done_count / max(total, 1))
+
+        # 找到当前学习日
+        current_day = None
         for d in days:
-            is_done = completed.get(str(d["day"]), False)
-            st.markdown(f"{'✅' if is_done else '⬜'} **Day {d['day']}** {d['title']}")
+            if not completed.get(str(d["day"]), False):
+                current_day = d
+                break
+
+        st.markdown(f"#### 📖 学习进度 ({done_count}/{total})")
+        st.progress(done_count / max(total, 1))
+
+        if current_day:
+            st.markdown(f"**🎯 今日重点：Day {current_day['day']} — {current_day['title']}**")
+            if current_day.get("tasks"):
+                for task in current_day["tasks"][:5]:
+                    st.markdown(f"- {task}")
+
+            # 完成当天按钮
+            if st.button(f"✅ 完成 Day {current_day['day']}", key=f"study_complete_day_{current_day['day']}"):
+                if "_day_completed" not in st.session_state.current_session:
+                    st.session_state.current_session["_day_completed"] = {}
+                st.session_state.current_session["_day_completed"][str(current_day["day"])] = True
+                st.session_state.current_session["study_progress"] = done_count + 1
+                _sync_progress_tracker(current_day["day"])
+                from src.ui.state import save_session_data
+                save_session_data(st.session_state.current_session_id, st.session_state.current_session)
+                st.experimental_rerun()
+        elif done_count == total:
+            st.success("🎉 全部学习计划已完成！")
+
         st.markdown("---")
 
-    # ===== 学习助手提示 =====
-    st.markdown("#### 📖 学习助手")
-    st.caption("在左侧对话框中向 Tutor 提问，基于你的学习资料获得个性化回答。")
-    st.markdown("💡 **试试这些问题：**")
-    st.caption("• 什么是 XXX？\n• 帮我解释一下这个概念\n• 能举个例子吗？\n• 它和 YYY 有什么区别？")
+    # ===== 学习笔记 =====
+    st.markdown("#### 📝 学习笔记")
+    notes_key = "_study_notes"
+    current_notes = st.session_state.current_session.get(notes_key, "")
+    new_notes = st.text_area(
+        "记录你的学习心得和要点",
+        value=current_notes,
+        height=120,
+        key="study_notes_area",
+        placeholder="在这里记录学习笔记...",
+    )
+    if new_notes != current_notes:
+        st.session_state.current_session[notes_key] = new_notes
+        from src.ui.state import save_session_data
+        save_session_data(st.session_state.current_session_id, st.session_state.current_session)
+
+    st.markdown("---")
+
+    # ===== 快捷提问 =====
+    st.markdown("#### 💬 快捷提问")
+    quick_questions = [
+        "帮我总结今天的学习重点",
+        "这个概念能举个例子吗？",
+        "帮我出几道练习题",
+        "今天学的内容和昨天有什么关联？",
+    ]
+    for i, q in enumerate(quick_questions):
+        if st.button(q, key=f"study_quick_q_{i}"):
+            from src.ui.logic import handle_chat_input
+            handle_chat_input(q, should_rerun=False)
+            st.experimental_rerun()
+
+    st.markdown("---")
+
+    # ===== 对话统计 =====
+    st.markdown("#### 📊 学习统计")
+    messages = get_current_messages()
+    user_msgs = sum(1 for m in messages if m.get("role") == "user")
+    agent_msgs = sum(1 for m in messages if m.get("role") == "assistant")
+    st.caption(f"💬 对话轮数：{user_msgs} 次提问 / {agent_msgs} 次回答")
+    if days:
+        st.caption(f"📅 计划天数：{total} 天 | 已完成：{done_count} 天")
+
+
+def render_resources_panel():
+    """资源面板：从对话和计划中提取所有推荐资源，以卡片形式展示。"""
+    if not st.session_state.current_session:
+        st.info("请先开始一个学习会话。")
+        return
+
+    st.markdown("#### 🔗 学习资源")
+
+    all_resources = []  # [(day_label, resource_list)]
+
+    # 1. 从计划中提取资源
+    cached_plan = st.session_state.current_session.get("_cached_plan_md")
+    if cached_plan:
+        plan_md = cached_plan
+    else:
+        plan_md, _ = _extract_plan_from_messages(get_current_messages())
+
+    plan_resources = _get_plan_resources()
+
+    if plan_md:
+        days = _parse_daily_plan(plan_md)
+        for d in days:
+            day_num = d["day"]
+            day_res = plan_resources.get(day_num, [])
+            text_res = d.get("resources", [])
+            if day_res or text_res:
+                all_resources.append((f"📅 Day {day_num}: {d['title']}", day_res, text_res))
+
+    # 2. 从对话消息中提取推荐的资源链接
+    chat_resources = _extract_resources_from_messages(get_current_messages())
+    if chat_resources:
+        all_resources.append(("💬 对话中推荐的资源", [], chat_resources))
+
+    if not all_resources:
+        st.info("暂无学习资源。开始对话或生成学习计划后，推荐的资源会显示在这里。")
+        _render_resource_search()
+        return
+
+    # 统计
+    total = sum(len(sr) + len(tr) for _, sr, tr in all_resources)
+    st.caption(f"共 {total} 个资源")
+    st.markdown("---")
+
+    # 渲染
+    for label, search_results, text_list in all_resources:
+        st.markdown(f"**{label}**")
+        if search_results:
+            for res in search_results:
+                render_resource_card(res)
+        if text_list:
+            for res in text_list:
+                _render_string_resource_card(res)
+        st.markdown("")
+
+    st.markdown("---")
+    _render_resource_search()
+
+
+def _extract_resources_from_messages(messages: list) -> list:
+    """从对话消息中提取含 URL 的资源推荐。仅提取包含实际链接的行。"""
+    resources = []
+    seen_urls = set()
+    url_pattern = re.compile(r'https?://\S+')
+
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", "")
+        if not content:
+            continue
+
+        for line in content.split("\n"):
+            s = line.strip()
+            if not s or len(s) < 10:
+                continue
+
+            urls = url_pattern.findall(s)
+            if not urls:
+                continue
+
+            # 去重：按 URL 去重
+            url = urls[0].rstrip(")）.,;:：")
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+
+            # 清理行文本
+            clean = re.sub(r'^\s*[-*]\s*', '', s)
+            # 保留 markdown 链接文本
+            clean = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 \2', clean)
+            if clean:
+                resources.append(clean)
+
+    return resources
+
+
+def _render_string_resource_card(text: str):
+    """将纯文本资源渲染为样式化卡片（非 SearchResult 时的降级方案）。"""
+    # 尝试从文本中提取 URL
+    url_match = re.search(r'https?://\S+', text)
+    url = url_match.group(0).rstrip(")）.,;:：") if url_match else ""
+
+    # 尝试识别平台
+    platform = "其他"
+    icon = "🔗"
+    lower_text = text.lower()
+    if "bilibili" in lower_text or "b站" in text:
+        platform, icon = "Bilibili", "🅱️"
+    elif "youtube" in lower_text:
+        platform, icon = "YouTube", "▶️"
+    elif "github" in lower_text:
+        platform, icon = "GitHub", "🐙"
+    elif "xiaohongshu" in lower_text or "小红书" in text:
+        platform, icon = "小红书", "📕"
+    elif "wechat" in lower_text or "微信" in text or "公众号" in text:
+        platform, icon = "微信", "💬"
+    elif "google" in lower_text:
+        platform, icon = "Google", "🔍"
+    elif "coursera" in lower_text:
+        platform, icon = "Coursera", "🎓"
+    elif "leetcode" in lower_text:
+        platform, icon = "LeetCode", "💻"
+    elif "zhihu" in lower_text or "知乎" in text:
+        platform, icon = "知乎", "📘"
+
+    # 清理文本：去掉 URL 部分作为标题
+    clean_text = text
+    if url:
+        clean_text = text.replace(url_match.group(0), "").strip().rstrip("()（）:：- ")
+        # 去掉 markdown 加粗
+        clean_text = re.sub(r'\*\*(.+?)\*\*', r'\1', clean_text)
+
+    # 如果清理后没有标题文字，用截断的 URL 作为标题
+    if not clean_text and url:
+        # 显示域名 + 路径前缀
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(url)
+            path_preview = parsed.path[:40] + ("..." if len(parsed.path) > 40 else "")
+            clean_text = f"{parsed.netloc}{path_preview}"
+        except Exception:
+            clean_text = url[:60] + ("..." if len(url) > 60 else "")
+
+    safe_title = html.escape(clean_text or text)
+    safe_url = html.escape(url) if url else ""
+    safe_platform = html.escape(platform)
+
+    if url:
+        # URL 显示为可点击超链接
+        url_display = url[:50] + ("..." if len(url) > 50 else "")
+        safe_url_display = html.escape(url_display)
+        title_html = f'<a href="{safe_url}" target="_blank" style="font-weight:600;color:#1F2937;text-decoration:none;font-size:14px;display:block;">{safe_title}</a>'
+        link_html = f'<a href="{safe_url}" target="_blank" style="font-size:12px;color:#3B82F6;text-decoration:underline;word-break:break-all;">{safe_url_display}</a>'
+    else:
+        title_html = f'<span style="font-weight:600;color:#1F2937;font-size:14px;">{safe_title}</span>'
+        link_html = ""
+
+    card_html = f"""
+    <div style="border:1px solid #E5E7EB;border-radius:10px;padding:12px 16px;margin-bottom:8px;background:#FAFAFA;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="background:#F3F4F6;padding:2px 8px;border-radius:12px;font-size:12px;">{icon} {safe_platform}</span>
+        </div>
+        {title_html}
+        {link_html}
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
+def _render_resource_search():
+    """资源搜索组件（复用于 Resources 面板）。"""
+    st.markdown("#### 🔍 搜索更多资源")
+    search_query = st.text_input(
+        "输入搜索关键词",
+        placeholder="例如：Python 入门教程",
+        key="resources_panel_search_input",
+    )
+    if st.button("🔍 搜索资源", key="resources_panel_search_btn"):
+        if search_query and search_query.strip():
+            from src.ui.logic import handle_chat_input
+            handle_chat_input(f"搜索资源：{search_query.strip()}", should_rerun=False)
+            st.experimental_rerun()
+        else:
+            st.warning("请输入搜索关键词")
 
 
 # ============================================================================
@@ -927,197 +1327,18 @@ def _render_trace_event(event: dict):
         st.caption(detail)
 
 # ============================================================================
-# Quiz Tab
+# Quiz Tab (REMOVED - kept as empty stub for backward compatibility)
 # ============================================================================
 
 def render_quiz_tab():
-    """Render the Quiz tab with questions, answers, and scoring."""
-    
-    if not st.session_state.current_session:
-        st.info("请先开始一个学习会话，然后可以生成测验。")
-        return
-    
-    quiz = st.session_state.current_session.get("quiz", {})
-    questions = quiz.get("questions", [])
-    answers = quiz.get("answers", {})
-    score = quiz.get("score")
-    wrong_questions = quiz.get("wrong_questions", [])
-    
-    # No quiz yet
-    if not questions:
-        st.markdown("### 🎓 准备好测试你的学习成果了吗？")
-        if st.session_state.is_processing:
-            st.info("🕒 正在生成测验题目，请稍候...")
-        else:
-            if st.button("生成测验", key="generate_quiz"):
-                from src.ui.logic import handle_generate_quiz
-                handle_generate_quiz()
-        return
-    
-    # Quiz in progress or completed
-    st.markdown(f"### 📝 测验 ({len(questions)} 题)")
-    
-    # Render each question
-    for q in questions:
-        qid = q.get("qid", "")
-        question_text = q.get("question", "")
-        # Compatible with both 'options' (new) and 'choices' (old)
-        choices = q.get("options", q.get("choices", []))
-        
-        # Handle correct answer (letter or index)
-        correct_answer = q.get("correct_answer")
-        correct_idx = q.get("answer_index", 0)
-        
-        if correct_answer and isinstance(correct_answer, str) and choices:
-            # Map 'A' -> 0
-            if correct_answer in ["A", "B", "C", "D"]:
-                mapping = {"A": 0, "B": 1, "C": 2, "D": 3}
-                correct_idx = mapping.get(correct_answer, 0)
-            # Or if correct_answer is the string itself match index
-            elif correct_answer in choices:
-                 correct_idx = choices.index(correct_answer)
+    """Quiz 功能已移除。"""
+    st.info("测验功能已移除，请使用 Plan 和 Study 页面进行学习。")
 
-        explanation = q.get("explanation", "")
-        
-        user_answer = answers.get(qid)
-        is_wrong = qid in wrong_questions
-        
-        st.markdown(f"**{question_text}**")
-        
-        # Show radio for unanswered, or result for answered
-        if score is None:
-            # Quiz in progress
-            selected = st.radio(
-                f"选择答案 ({qid})",
-                choices,
-                index=user_answer if user_answer is not None else 0,
-                key=f"quiz_{qid}"
-            )
-            # Store index
-            answers[qid] = choices.index(selected)
-        else:
-            # Quiz completed - show results
-            for i, choice in enumerate(choices):
-                if i == correct_idx:
-                    st.markdown(f"✅ {choice}")
-                elif i == user_answer and is_wrong:
-                    st.markdown(f"❌ ~~{choice}~~")
-                else:
-                    st.markdown(f"○ {choice}")
-            
-            if is_wrong and explanation:
-                st.caption(f"💡 {explanation}")
-        
-        st.markdown("---")
-    
-    # Submit or Score display
-    if score is None:
-        if st.button("提交答案", key="submit_quiz"):
-            _score_quiz()
-    else:
-        st.success(f"🎉 你的得分：{score} / {len(questions)}")
-        wrong_count = len(wrong_questions)
-        if wrong_count > 0:
-            st.warning(f"错题数：{wrong_count}")
-
-        # Report section (merged into Quiz tab)
-        st.markdown("---")
-        report = st.session_state.current_session.get("report", {})
-        if report.get("generated"):
-            st.markdown("### 📊 学习报告")
-            with st.expander("预览报告", expanded=False):
-                st.markdown(report.get("content", ""))
-            st.download_button(
-                label="📥 下载报告",
-                data=report.get("content", ""),
-                file_name="xlearning_report.md",
-                mime="text/markdown",
-                key="quiz_dl_report"
-            )
-        else:
-            if st.session_state.is_processing:
-                st.info("🕒 正在生成学习报告，请稍候...")
-            else:
-                if st.button("📊 生成学习报告", key="gen_report_from_quiz"):
-                    from src.ui.logic import handle_generate_report
-                    handle_generate_report()
-
-def _score_quiz():
-    """Score the current quiz."""
-    if not st.session_state.current_session:
-        return
-    
-    quiz = st.session_state.current_session.get("quiz", {})
-    questions = quiz.get("questions", [])
-    answers = quiz.get("answers", {})
-    
-    correct = 0
-    wrong = []
-    
-    for q in questions:
-        qid = q.get("qid")
-        
-        # Calculate correct index again
-        choices = q.get("options", q.get("choices", []))
-        correct_answer = q.get("correct_answer")
-        correct_idx = q.get("answer_index", 0)
-        
-        if correct_answer and isinstance(correct_answer, str):
-            if correct_answer in ["A", "B", "C", "D"]:
-                mapping = {"A": 0, "B": 1, "C": 2, "D": 3}
-                correct_idx = mapping.get(correct_answer, 0)
-        
-        user_answer = answers.get(qid)
-        
-        if user_answer == correct_idx:
-            correct += 1
-        else:
-            wrong.append(qid)
-    
-    quiz["score"] = correct
-    quiz["wrong_questions"] = wrong
-    
-    from src.ui.state import save_session_data
-    save_session_data(st.session_state.current_session_id, st.session_state.current_session)
-    st.experimental_rerun()
 
 # ============================================================================
-# Report Tab
+# Report Tab (REMOVED - kept as empty stub for backward compatibility)
 # ============================================================================
 
 def render_report_tab():
-    """Render the Report tab with markdown preview and download."""
-    
-    if not st.session_state.current_session:
-        st.info("请先开始一个学习会话，然后可以生成报告。")
-        return
-    
-    report = st.session_state.current_session.get("report", {})
-    generated = report.get("generated", False)
-    content = report.get("content", "")
-    
-    if not generated:
-        st.markdown("### 📊 学习进度报告")
-        st.markdown("完成学习后，可以生成一份 Markdown 格式的进度报告。")
-        if st.session_state.is_processing:
-            st.info("🕒 正在生成报告，请稍候...")
-        else:
-            if st.button("📊 生成报告", key="generate_report"):
-                from src.ui.logic import handle_generate_report
-                handle_generate_report()
-        return
-    
-    # Report generated - show preview and download
-    st.markdown("### 📊 学习进度报告")
-    
-    # Preview
-    with st.expander("预览报告", expanded=True):
-        st.markdown(content)
-    
-    # Download button
-    st.download_button(
-        label="📥 下载 Markdown",
-        data=content,
-        file_name="xlearning_report.md",
-        mime="text/markdown"
-    )
+    """Report 功能已移除。"""
+    st.info("报告功能已移除。请在 Plan 页面查看学习进度。")

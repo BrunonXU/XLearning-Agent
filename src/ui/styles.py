@@ -17,7 +17,7 @@ def get_css() -> str:
         --text-primary: #38352F;
         --accent-color: #D97757;
         --sidebar-bg: #F4F3EF;
-        --sidebar-width: 294px;
+        --sidebar-width: 235px;
         /* docs/ui_mockups 附录配色 */
         --primary: #F97316;
         --success: #22C55E;
@@ -68,21 +68,31 @@ def get_css() -> str:
         -ms-overflow-style: none !important;
     }
 
-    /* 遮挡拖拽把手：在侧边栏右边缘叠一层，阻止拖拽 */
+    /* 遮挡拖拽把手：允许侧边栏折叠/展开 */
     [data-testid="stSidebar"] {
         position: relative !important;
+        transition: width 0.3s, min-width 0.3s, max-width 0.3s !important;
     }
-    [data-testid="stSidebar"]::after {
-        content: '';
-        position: absolute;
-        right: -8px;
-        top: 0;
-        bottom: 0;
-        width: 18px;
-        background: transparent;
-        z-index: 99999;
-        pointer-events: auto !important;
-        cursor: default !important;
+
+    /* 侧边栏折叠时：宽度归零，主内容区自动扩展 */
+    [data-testid="stSidebar"][aria-expanded="false"],
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        flex: 0 0 0 !important;
+        overflow: hidden !important;
+        border-right: none !important;
+    }
+
+    /* 主内容区随侧边栏折叠自适应 */
+    .block-container {
+        transition: margin-left 0.3s, padding-left 0.3s !important;
+    }
+
+    /* 底部 footer 也跟随侧边栏折叠 */
+    .workspace-footer {
+        transition: left 0.3s !important;
     }
 
     /* 关闭按钮(×)改为折叠箭头(◀) */
@@ -114,6 +124,17 @@ def get_css() -> str:
         overflow-y: hidden !important;
     }
     
+    /* 侧边栏内部 padding 缩减：让文字区域更宽 */
+    [data-testid="stSidebar"] > div:first-child {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+    [data-testid="stSidebar"] .block-container,
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
     /* Sidebar Buttons（新对话、历史列表等） */
     [data-testid="stSidebar"] .stButton > button {
         background-color: transparent;
@@ -123,9 +144,9 @@ def get_css() -> str:
         justify-content: flex-start;
         font-weight: 500;
         font-size: 13px !important;
-        padding: 6px 10px;
+        padding: 4px 8px;
         width: 100%;
-        min-height: 36px;
+        min-height: 34px;
         border-radius: 6px;
         transition: background-color 0.15s;
     }
@@ -145,7 +166,7 @@ def get_css() -> str:
         font-size: 13px;
         font-weight: 500;
         color: #555;
-        padding: 7px 10px;
+        padding: 5px 8px;
         border-radius: 6px;
         margin-bottom: 2px;
         white-space: nowrap;
@@ -161,7 +182,7 @@ def get_css() -> str:
     .sess-actions-row {
         display: flex;
         gap: 6px;
-        margin: 2px 10px 6px 10px;
+        margin: 2px 8px 6px 8px;
     }
     .sess-actions-row .sess-btn {
         font-size: 12px;
@@ -190,8 +211,8 @@ def get_css() -> str:
         font-size: 28px;
         font-weight: 800;
         text-align: center;
-        margin-top: 12px;
-        margin-bottom: 16px;
+        margin-top: 8px;
+        margin-bottom: 12px;
         color: var(--accent-color);
         width: 100%;
     }
@@ -392,15 +413,17 @@ def get_css() -> str:
 
     /* ================================================================
        Stepper: tab bar 导航
-       5 列布局（空 | tab | tab | tab | 空），匹配 5 子元素的 HorizontalBlock
+       列布局（空 | tab | tab | tab | 空），匹配 5-6 子元素的 HorizontalBlock
        ================================================================ */
-    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) {
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child),
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(6):last-child) {
         padding: 4px 0 2px 0 !important;
         margin-bottom: 2px !important;
         border-bottom: 1px solid #E5E7EB !important;
         background: #FFFFFF !important;
     }
-    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) .stButton > button {
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) .stButton > button,
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(6):last-child) .stButton > button {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
@@ -418,7 +441,8 @@ def get_css() -> str:
         justify-content: center !important;
         margin: 0 auto !important;
     }
-    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) .stButton > button:hover {
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(5):last-child) .stButton > button:hover,
+    [data-testid="stHorizontalBlock"]:has(> :nth-child(6):last-child) .stButton > button:hover {
         background: #F3F4F6 !important;
         color: #374151 !important;
     }
@@ -427,7 +451,6 @@ def get_css() -> str:
        工作区双列：聊天区 | 固定分隔线 | 功能面板
        两列独立滚动，互不影响
        仅作用于主内容区（排除侧边栏）
-       注意：首页和工作区不会同时渲染，所以不会冲突
        ================================================================ */
     /* 恰好 2 列的容器（主内容区） */
     .block-container [data-testid="stHorizontalBlock"]:has(> :nth-child(2):last-child) {
@@ -451,7 +474,7 @@ def get_css() -> str:
         overflow-x: hidden !important;
         padding-bottom: 1rem !important;
         max-height: calc(100vh - 130px) !important;
-        min-width: 220px !important;
+        min-width: 200px !important;
         flex-shrink: 0 !important;
         padding-left: 1.5rem !important;
     }

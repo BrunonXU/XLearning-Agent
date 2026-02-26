@@ -1,7 +1,7 @@
 """
 XLearning Agent - UI Layout
 ============================
-Simplified 3-tab stepper: Plan | Study | Quiz
+3-tab stepper: Plan | Study | Resources
 Stepper tabs are clickable for navigation. No action banner.
 """
 
@@ -259,7 +259,7 @@ def _handle_home_submit(prompt: str, file):
 
 
 # ============================================================================
-# Workspace View: 3-tab clickable stepper + 2-column layout
+# Workspace View: 2-tab clickable stepper + 2-column layout
 # ============================================================================
 
 def render_workspace_view():
@@ -269,15 +269,10 @@ def render_workspace_view():
     stages = logic.get("stages", {})
     active_tab = st.session_state.active_tab
 
-    # Ensure active_tab is valid for new 3-tab system
-    if active_tab not in ("Plan", "Study", "Quiz", "Trace"):
+    # Ensure active_tab is valid for 3-tab system (Plan | Study | Resources)
+    if active_tab not in ("Plan", "Study", "Resources", "Trace"):
         active_tab = "Plan"
         st.session_state.active_tab = "Plan"
-
-    # Check completion
-    if _check_completion(st.session_state.current_session) and active_tab == "Complete":
-        _render_completion_view(st.session_state.current_session, stages)
-        return
 
     # ===== Clickable Stepper =====
     _render_clickable_stepper(stages, active_tab)
@@ -297,9 +292,9 @@ def render_workspace_view():
         elif active_tab == "Study":
             from src.ui.renderer import render_study_panel
             render_study_panel()
-        elif active_tab == "Quiz":
-            from src.ui.renderer import render_quiz_tab
-            render_quiz_tab()
+        elif active_tab == "Resources":
+            from src.ui.renderer import render_resources_panel
+            render_resources_panel()
         elif active_tab == "Trace":
             from src.ui.renderer import render_trace_tab
             render_trace_tab()
@@ -320,7 +315,7 @@ def render_workspace_view():
 
 def _render_clickable_stepper(stages: dict, active_tab: str):
     """Render a compact tab bar — buttons centered, active tab with accent underline."""
-    tab_keys = ["Plan", "Study", "Quiz"]
+    tab_keys = ["Plan", "Study", "Resources"]
     if st.session_state.get("dev_mode") and st.session_state.get("show_trace"):
         tab_keys.append("Trace")
 
@@ -346,74 +341,3 @@ def _render_clickable_stepper(stages: dict, active_tab: str):
                 )
 
 
-# ============================================================================
-# Completion View
-# ============================================================================
-
-def _check_completion(session: dict) -> bool:
-    if not session:
-        return False
-    has_plan = session.get("plan") is not None
-    has_quiz = session.get("quiz_attempts", 0) > 0
-    has_report = session.get("report", {}).get("generated", False)
-    return has_plan and has_quiz and has_report
-
-
-def _render_completion_view(session: dict, stages: dict):
-    quiz_data = session.get("quiz", {})
-    quiz_score = quiz_data.get("score")
-    quiz_total = len(quiz_data.get("questions", []))
-    accuracy_pct = f"{(quiz_score / quiz_total * 100):.0f}%" if quiz_score is not None and quiz_total > 0 else "N/A"
-    report_data = session.get("report", {})
-    plan = session.get("plan")
-    study_phases = 0
-    if plan and isinstance(plan, dict):
-        study_phases = len(plan.get("phases", []))
-    elif plan and isinstance(plan, list):
-        study_phases = len(plan)
-    else:
-        study_phases = session.get("study_progress", 0) or 0
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class="completion-card-wrap">
-        <div class="completion-card">
-            <div class="completion-title">🎉 恭喜！学习旅程已完成！</div>
-            <div class="completion-stats">
-                <div class="completion-stat-card completion-stat-success">
-                    <div class="stat-icon">📚</div>
-                    <div class="stat-value">{study_phases}</div>
-                    <div class="stat-label">学习阶段</div>
-                </div>
-                <div class="completion-stat-card completion-stat-info">
-                    <div class="stat-icon">📝</div>
-                    <div class="stat-value">{quiz_total}</div>
-                    <div class="stat-label">测验题数</div>
-                </div>
-                <div class="completion-stat-card completion-stat-warning">
-                    <div class="stat-icon">📊</div>
-                    <div class="stat-value">{accuracy_pct}</div>
-                    <div class="stat-label">正确率</div>
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if report_data.get("content"):
-        st.download_button(
-            label="📥 下载完整报告", data=report_data["content"],
-            file_name="xlearning_report.md", mime="text/markdown",
-            key="completion_dl_report"
-        )
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("🔄 继续深入学习", key="continue_study"):
-            st.session_state.active_tab = "Study"
-            st.experimental_rerun()
-    with col_b:
-        if st.button("✨ 开始新课程", key="new_course"):
-            st.session_state.current_session_id = None
-            st.session_state.current_session = None
-            st.experimental_rerun()

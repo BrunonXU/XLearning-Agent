@@ -58,8 +58,6 @@ TEXTS = {
         "earlier_messages": "更早的消息",
         "evidence": "📚 证据来源",
         "tools": "🔧 工具调用",
-        "quiz_tab": "测验",
-        "report_tab": "报告",
         "trace_tab": "Trace",
         "chat_tab": "对话",
     },
@@ -91,8 +89,6 @@ TEXTS = {
         "earlier_messages": "Earlier messages",
         "evidence": "📚 Evidence",
         "tools": "🔧 Tools",
-        "quiz_tab": "Quiz",
-        "report_tab": "Report",
         "trace_tab": "Trace",
         "chat_tab": "Chat",
     }
@@ -190,7 +186,7 @@ def init_session_state() -> None:
         st.session_state.ui_mode = "guided"
     if "current_session_id" not in st.session_state:
         st.session_state.current_session_id = None
-    # New 3-tab system: Plan, Study, Quiz
+    # 3-tab system: Plan, Study, Resources
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = "Plan"
     if "kb_status" not in st.session_state:
@@ -369,20 +365,17 @@ def set_kb_status(status: str, source: str = None, count: int = None, error: str
         st.session_state.kb_info["last_error"] = None
 
 # ============================================================================
-# Stage Logic (Simplified 3-tab: Plan, Study, Quiz)
+# Stage Logic (Simplified 2-tab: Plan, Study)
 # ============================================================================
 
 def calculate_stage_logic(session: Dict) -> Dict:
-    """Calculate stage status for the simplified 3-tab stepper."""
+    """Calculate stage status for the simplified 2-tab stepper."""
     if not session:
         return {}
 
     has_input = session.get("has_input", False)
     plan_exists = session.get("plan") is not None
-    kb_count = session.get("kb_count", 0)
     study_progress = session.get("study_progress", 0)
-    quiz_attempts = session.get("quiz_attempts", 0)
-    has_report = session.get("report", {}).get("generated", False)
 
     stages = {
         "Plan": {
@@ -397,16 +390,16 @@ def calculate_stage_logic(session: Dict) -> Dict:
             "ready": True,
             "done": study_progress > 0,
         },
-        "Quiz": {
-            "label": "测验",
-            "icon": "📝",
+        "Resources": {
+            "label": "资源",
+            "icon": "🔗",
             "ready": True,
-            "done": quiz_attempts > 0,
+            "done": False,
         },
     }
 
     return {
         "stages": stages,
         "current_stage": session.get("current_stage", "Plan"),
-        "kb_ready": kb_count > 0,
+        "kb_ready": session.get("kb_count", 0) > 0,
     }

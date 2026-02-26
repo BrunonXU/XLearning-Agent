@@ -29,7 +29,6 @@ def get_orchestrator(on_event: Optional[Any] = None, mode: Optional[str] = None)
             _ORCHESTRATOR.on_event = on_event
             _ORCHESTRATOR.planner.on_event = on_event
             _ORCHESTRATOR.tutor.on_event = on_event
-            _ORCHESTRATOR.validator.on_event = on_event
             
     return _ORCHESTRATOR
 
@@ -240,35 +239,17 @@ def process_pending_chat(should_rerun: bool = True):
                 session["plan"] = {"status": "generated"}
                 # 缓存最新计划内容到 session，供右侧面板直接读取
                 session["_cached_plan_md"] = response
+                
+                # 存储结构化 LearningPlan 对象（含 SearchResult 资源），供资源卡片渲染
+                try:
+                    if orchestrator._last_plan is not None:
+                        session["_learning_plan"] = orchestrator._last_plan.model_dump()
+                except Exception:
+                    pass
             
             # 检测是否进入学习阶段
             if session.get("plan"):
                 session["study_progress"] = max(session.get("study_progress", 0), 1)
-            
-            # 检测是否触发了 Quiz（Chat 中输入"测验"等关键词）
-            if "开始测验" in response or "📝 **开始测验" in response:
-                # Orchestrator 通过 TutorAgent.start_quiz() 返回了测验内容
-                # 尝试从 Orchestrator 的 Tutor 获取当前 quiz 数据并同步到 session
-                try:
-                    tutor = orchestrator.tutor
-                    if tutor.current_quiz and tutor.current_quiz.questions:
-                        ui_questions = []
-                        for i, q in enumerate(tutor.current_quiz.questions):
-                            ui_questions.append({
-                                "qid": f"q{i+1}",
-                                "question": q.question,
-                                "options": q.options if q.options else ["A", "B", "C", "D"],
-                                "correct_answer": q.correct_answer,
-                                "explanation": q.explanation,
-                                "topic": q.topic,
-                            })
-                        session["quiz"]["questions"] = ui_questions
-                        session["quiz"]["score"] = None
-                        session["quiz"]["wrong_questions"] = []
-                        session["quiz"]["answers"] = {}
-                        session["quiz_attempts"] = session.get("quiz_attempts", 0) + 1
-                except Exception:
-                    pass  # Quiz 同步失败不影响主流程
 
     except Exception as e:
         err_trace = traceback.format_exc()
@@ -327,150 +308,10 @@ def handle_file_upload(file) -> None:
         st.error(f"Upload failed: {e}")
 
 def handle_generate_quiz() -> None:
-    """
-    生成测验 — 调用真实后端 Orchestrator → ValidatorAgent。
-    
-    将 ValidatorAgent 生成的 Quiz 对象转换为 UI session 格式，
-    确保 Quiz Tab 和 Chat 入口使用同一份数据。
-    """
-    from src.ui.state import save_session_data, add_trace_event
-    import uuid
-    
-    if not st.session_state.current_session:
-        return
-    
-    st.session_state.is_processing = True
-    
-    try:
-        # 1. 获取 Orchestrator
-        def trace_callback(event_type, name, detail=""):
-            step_id = "quiz_" + uuid.uuid4().hex[:4]
-            add_trace_event(step_id, event_type, name, detail)
-        
-        orchestrator = get_orchestrator(on_event=trace_callback)
-        
-        # 从 session 恢复 domain（Orchestrator 可能因 rerun 丢失状态）
-        quiz_topic = orchestrator.domain or ""
-        if not quiz_topic and st.session_state.current_session:
-            quiz_topic = st.session_state.current_session.get("_orch_domain", "")
-            doc_meta = st.session_state.current_session.get("_doc_meta")
-            if doc_meta:
-                quiz_topic = doc_meta.get("title", quiz_topic)
-            # 同时恢复 orchestrator 的 domain 和 RAG
-            if quiz_topic and not orchestrator.domain:
-                orchestrator.set_domain(quiz_topic)
-                if doc_meta:
-                    orchestrator.tutor.set_doc_meta(doc_meta)
-        if not quiz_topic:
-            quiz_topic = "学习测验"
-        
-        # 2. 获取 RAG 内容作为出题参考
-        content = ""
-        if orchestrator.rag_engine:
-            content = orchestrator.rag_engine.build_context(
-                quiz_topic, k=3
-            )
-        
-        # 3. 调用 ValidatorAgent 生成真实 Quiz
-        quiz = orchestrator.validator.generate_quiz(
-            topic=quiz_topic,
-            content=content,
-            num_questions=5,
-        )
-        
-        # 4. 转换为 UI session 格式
-        ui_questions = []
-        for i, q in enumerate(quiz.questions):
-            ui_questions.append({
-                "qid": f"q{i+1}",
-                "question": q.question,
-                "options": q.options if q.options else ["A", "B", "C", "D"],
-                "correct_answer": q.correct_answer,
-                "explanation": q.explanation,
-                "topic": q.topic,
-            })
-        
-        # 5. 写入 session（Quiz Tab 和 Chat 共享这份数据）
-        st.session_state.current_session["quiz_attempts"] = (
-            st.session_state.current_session.get("quiz_attempts", 0) + 1
-        )
-        st.session_state.current_session["quiz"]["questions"] = ui_questions
-        st.session_state.current_session["quiz"]["score"] = None
-        st.session_state.current_session["quiz"]["wrong_questions"] = []
-        st.session_state.current_session["quiz"]["answers"] = {}
-        
-        # 6. 同时在聊天中显示 quiz 开始提示
-        quiz_msg = f"📝 **测验已生成：{quiz.topic}**\n\n共 {len(ui_questions)} 道题目，请切换到测验面板作答。"
-        add_message("assistant", quiz_msg, agent="validator")
-        
-        save_session_data(st.session_state.current_session_id, st.session_state.current_session)
-        
-    except Exception as e:
-        import traceback
-        add_message("assistant", f"⚠️ 测验生成失败: {str(e)}", agent="validator", status="error")
-        print(f"[Quiz Generation Error] {traceback.format_exc()}")
-    
-    finally:
-        st.session_state.is_processing = False
-        st.experimental_rerun()
+    """Quiz 功能已移除。保留空函数以兼容旧调用。"""
+    pass
 
 
 def handle_generate_report() -> None:
-    """
-    生成学习进度报告 — 调用真实后端 Orchestrator → ValidatorAgent。
-    
-    将 ProgressReport 写入 session，供 Report Tab 展示和下载。
-    """
-    from src.ui.state import save_session_data, add_trace_event
-    import uuid
-    
-    if not st.session_state.current_session:
-        return
-    
-    st.session_state.is_processing = True
-    
-    try:
-        # 1. 获取 Orchestrator
-        def trace_callback(event_type, name, detail=""):
-            step_id = "report_" + uuid.uuid4().hex[:4]
-            add_trace_event(step_id, event_type, name, detail)
-        
-        orchestrator = get_orchestrator(on_event=trace_callback)
-        
-        # 从 session 恢复 domain
-        report_domain = orchestrator.domain or ""
-        if not report_domain and st.session_state.current_session:
-            report_domain = st.session_state.current_session.get("_orch_domain", "")
-            doc_meta = st.session_state.current_session.get("_doc_meta")
-            if doc_meta:
-                report_domain = doc_meta.get("title", report_domain)
-        if not report_domain:
-            report_domain = "学习报告"
-        
-        # 2. 调用 ValidatorAgent 生成报告
-        report = orchestrator.validator.generate_report(
-            domain=report_domain,
-            file_manager=orchestrator.file_manager,
-        )
-        
-        # 3. 写入 session
-        report_md = report.to_markdown()
-        st.session_state.current_session["report"] = {
-            "generated": True,
-            "content": report_md,
-            "ts": __import__("datetime").datetime.now().isoformat(),
-        }
-        
-        # 4. 聊天中也显示报告生成提示
-        add_message("assistant", f"📊 **学习进度报告已生成！**\n\n{report_md}", agent="validator")
-        
-        save_session_data(st.session_state.current_session_id, st.session_state.current_session)
-        
-    except Exception as e:
-        import traceback
-        add_message("assistant", f"⚠️ 报告生成失败: {str(e)}", agent="validator", status="error")
-        print(f"[Report Generation Error] {traceback.format_exc()}")
-    
-    finally:
-        st.session_state.is_processing = False
-        st.experimental_rerun()
+    """Report 功能已移除。保留空函数以兼容旧调用。"""
+    pass

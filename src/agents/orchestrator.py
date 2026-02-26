@@ -6,20 +6,13 @@ Orchestrator - 协调器
 2. 模式选择（单独/协调）
 3. Agent 调度
 4. 状态管理
+5. 进度上下文注入
 
 双模式设计：
 - 单独模式（Standalone）：用户精细控制每个 Agent
 - 协调模式（Coordinated）：自动编排完整流程
 
-设计亮点：
-1. 意图识别 - 关键词匹配（可扩展为 LLM 识别）
-2. 状态机 - IDLE → PLANNING → LEARNING → VALIDATING → COMPLETED
-3. Agent 调度 - 解耦调度层和业务逻辑
-
-面试话术：
-> "Orchestrator 是整个系统的调度中心。它实现了两种模式：
->  单独模式适合想精细控制的用户，协调模式自动完成全流程。
->  核心思想是'谁来做'和'怎么做'分离，调度层只负责路由。"
+意图路由优先级：create_plan > ask_question > search_resource
 """
 
 from typing import Optional, Dict, Any, List, Generator
@@ -30,9 +23,9 @@ import re
 from .base import BaseAgent
 from .planner import PlannerAgent
 from .tutor import TutorAgent
-from .validator import ValidatorAgent
 from src.core.file_manager import FileManager
 from src.core.models import SessionState, SessionMode
+from src.core.progress import ProgressTracker
 from src.rag import RAGEngine
 
 
@@ -85,7 +78,6 @@ class Orchestrator:
         # 初始化 Agents 并注入回调
         self.planner = PlannerAgent(on_event=on_event)
         self.tutor = TutorAgent(on_event=on_event)
-        self.validator = ValidatorAgent(on_event=on_event)
         
         # 文件管理器（领域确定后初始化）
         self.file_manager: Optional[FileManager] = None
@@ -95,6 +87,9 @@ class Orchestrator:
         
         # 会话状态
         self.session_state: Optional[SessionState] = None
+        
+        # 进度追踪器
+        self.progress_tracker: Optional[ProgressTracker] = None
 
         # 意图识别缓存：相同输入不重复调用 LLM
         self._intent_cache: Dict[str, str] = {}
@@ -103,6 +98,7 @@ class Orchestrator:
         # Clarification 状态跟踪：当 _handle_create_plan 走 clarification 分支时，
         # 保存原始输入，等用户回答后自动合并上下文重新生成计划
         self._pending_clarification: Optional[str] = None  # 原始用户输入（含 URL 等）
+        self._last_plan = None  # 最近生成的 LearningPlan 对象（供 UI 读取资源卡片）
     
     def set_domain(self, domain: str):
         """设置学习领域"""
@@ -349,7 +345,7 @@ class Orchestrator:
             yield from self.tutor.stream_response(user_input, history=history, use_rag=True)
             return
 
-        # 其它路径（plan/quiz/report）保持一次性逻辑
+        # 其它路径（plan/search_resource/report）保持一次性逻辑
         yield self.run(user_input, history=history, pre_detected_intent=intent, **kwargs)
 
     def _run_standalone(
@@ -361,17 +357,22 @@ class Orchestrator:
     ) -> str:
         """
         单独模式：根据意图调用对应 Agent
+        
+        路由优先级：create_plan > ask_question > search_resource
         """
         intent = pre_detected_intent or self._detect_intent(user_input)
         source = self._last_intent_meta.get("source", "unknown")
         self._emit_event("progress", "IntentDetection", f"识别到的意图: {intent} (source={source})")
         
+        # 注入 ProgressTracker 上下文
+        self._inject_progress_context()
+        
         if intent == "create_plan":
             return self._handle_create_plan(user_input, history=history)
         elif intent == "ask_question":
             return self._handle_ask_question(user_input, history=history)
-        elif intent == "start_quiz":
-            return self._handle_start_quiz(user_input)
+        elif intent == "search_resource":
+            return self._handle_search_resource(user_input, history=history)
         elif intent == "get_report":
             return self._handle_get_report()
         else:
@@ -395,6 +396,9 @@ class Orchestrator:
             "IntentDetection",
             f"协调模式意图识别: {intent} (source={source}, state={self.state})"
         )
+
+        # 注入 ProgressTracker 上下文
+        self._inject_progress_context()
 
         # 如果用户明确提到"重新开始"或者切换了话题（简单检测）
         if self.state != OrchestratorState.IDLE and self._is_context_reset_signal(user_input):
@@ -456,9 +460,8 @@ class Orchestrator:
                 return self._handle_ask_question(user_input, history=history)
 
         # 2. 如果已经在学习中，根据意图路由
-        if intent == "start_quiz":
-            self.state = OrchestratorState.VALIDATING
-            return self._handle_start_quiz(user_input)
+        if intent == "search_resource":
+            return self._handle_search_resource(user_input, history=history)
         elif intent == "get_report":
             return self._handle_get_report()
         elif intent == "create_plan" and self.state != OrchestratorState.PLANNING:
@@ -506,36 +509,48 @@ class Orchestrator:
         return "ask_question"
 
     def _detect_intent_by_keywords(self, user_input: str) -> Optional[str]:
-        """关键词规则匹配（高置信度、低成本）"""
+        """关键词规则匹配（高置信度、低成本）
+        
+        优先级：create_plan > ask_question > search_resource
+        """
         input_lower = user_input.lower()
 
-        if any(kw in input_lower for kw in ["测验", "quiz", "测试", "考试", "出题", "题目"]):
-            return "start_quiz"
-        if any(kw in input_lower for kw in ["报告", "进度", "report", "progress", "总结"]):
-            return "get_report"
+        # 优先级 1: create_plan
         if any(kw in input_lower for kw in [
             "生成计划", "学习计划", "plan for", "roadmap", "学习规划", "生成大纲",
             "做一个规划", "做个规划", "帮我规划", "规划一下", "给我规划",
             "做一个计划", "做个计划", "给我做一个", "给我做个",
         ]):
             return "create_plan"
-        # "分析" + 文档/pdf 相关词 → 视为问答（让 tutor 基于 RAG 分析内容）
-        # 用户说"分析这个文档"是想看内容摘要，不是生成学习计划
-        if "分析" in input_lower:
-            return "ask_question"
         # GitHub URL 视为"生成计划"意图（用户粘贴仓库链接，期望分析并生成计划）
         if re.match(r'https?://github\.com/', input_lower):
             return "create_plan"
+
+        # "分析" + 文档/pdf 相关词 → 视为问答（让 tutor 基于 RAG 分析内容）
+        if "分析" in input_lower:
+            return "ask_question"
         # 简短的延续性输入（"继续"、"好的"、"下一步"等）→ 直接问答
         if input_lower.strip() in {"继续", "好的", "下一步", "然后呢", "接着", "go on", "continue", "next"}:
             return "ask_question"
+
+        # 优先级 2: search_resource
+        if any(kw in input_lower for kw in [
+            "搜索资源", "找资源", "推荐资源", "search resource",
+            "搜索更多资源", "找学习资源", "推荐学习资源",
+            "有什么资源", "资源推荐",
+        ]):
+            return "search_resource"
+
+        if any(kw in input_lower for kw in ["报告", "进度", "report", "progress", "总结"]):
+            return "get_report"
+
         return None
 
     def _detect_intent_by_llm(self, user_input: str) -> Optional[str]:
         """LLM 分类（关键词无法覆盖时启用）"""
         prompt = (
             "请判断用户意图，并仅返回 JSON，不要输出其它内容。\n"
-            "可选 intent 只有：create_plan, ask_question, start_quiz, get_report, chitchat\n"
+            "可选 intent 只有：create_plan, ask_question, search_resource, get_report, chitchat\n"
             "JSON 格式：{\"intent\": \"...\"}\n\n"
             f"用户输入：{user_input}"
         )
@@ -556,11 +571,9 @@ class Orchestrator:
 
             data = json.loads(cleaned)
             intent = data.get("intent", "").strip()
-            if intent in {"create_plan", "ask_question", "start_quiz", "get_report", "chitchat"}:
+            if intent in {"create_plan", "ask_question", "search_resource", "get_report", "chitchat"}:
                 lowered = user_input.lower()
-                # 保护策略：测验/报告必须显式触发，避免把“如何学习/如何复现”误判成出题或报告
-                if intent == "start_quiz" and not any(kw in lowered for kw in ["测验", "quiz", "测试", "考试", "出题", "题目"]):
-                    return "ask_question"
+                # 保护策略：报告必须显式触发
                 if intent == "get_report" and not any(kw in lowered for kw in ["报告", "进度", "report", "progress", "总结"]):
                     return "ask_question"
                 return intent
@@ -568,6 +581,7 @@ class Orchestrator:
             return None
 
         return None
+
 
     def _is_context_reset_signal(self, user_input: str) -> bool:
         """检测是否应重置流程状态（新话题/新项目）。"""
@@ -608,6 +622,12 @@ class Orchestrator:
             context_parts.append("用户在对话中提供的信息：\n" + "\n".join(f"- {m}" for m in meaningful_msgs))
         
         return "\n".join(context_parts)
+
+    def _inject_progress_context(self) -> None:
+        """在调用 Agent 前注入 ProgressTracker 上下文到 Tutor"""
+        if self.progress_tracker:
+            if hasattr(self.tutor, 'set_progress_tracker'):
+                self.tutor.set_progress_tracker(self.progress_tracker)
 
     def _handle_create_plan(self, user_input: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """处理创建计划请求
@@ -712,6 +732,14 @@ class Orchestrator:
         # 清除 clarification 状态
         self._pending_clarification = None
         
+        # 保存结构化计划对象（供 UI 资源卡片读取）
+        self._last_plan = plan
+        
+        # 初始化 ProgressTracker
+        if self.progress_tracker:
+            self.progress_tracker.init_from_plan(plan)
+            self.progress_tracker.save()
+        
         # 保存计划
         if self.file_manager:
             self.file_manager.save_plan(plan.to_markdown())
@@ -729,28 +757,29 @@ class Orchestrator:
         """处理问答请求"""
         return self.tutor.run(user_input, mode=SessionMode.FREE, history=history)
     
-    def _handle_start_quiz(self, user_input: str) -> str:
-        """处理开始测验请求"""
-        # 获取 RAG 内容作为参考
-        content = ""
-        if self.rag_engine:
-            content = self.rag_engine.build_context(user_input, k=3)
-        
-        quiz = self.validator.generate_quiz(
-            topic=self.domain or "学习测验",
-            content=content,
-            num_questions=5,
-        )
-        
-        return self.tutor.start_quiz(quiz)
+    def _handle_search_resource(self, user_input: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+        """处理资源搜索请求 — 路由到 TutorAgent（已集成 ResourceSearcher）"""
+        return self.tutor.run(user_input, mode=SessionMode.FREE, history=history)
     
     def _handle_get_report(self) -> str:
         """处理获取报告请求"""
-        report = self.validator.generate_report(
-            domain=self.domain or "Unknown",
-            file_manager=self.file_manager,
-        )
-        return report.to_markdown()
+        # 基于 ProgressTracker 生成简单进度报告
+        if self.progress_tracker:
+            summary = self.progress_tracker.get_progress_summary()
+            total = summary["total_days"]
+            completed = summary["completed_days"]
+            pct = summary["percentage"]
+            current = summary["current_day"]
+            lines = [
+                f"📊 学习进度报告",
+                f"- 总天数: {total}",
+                f"- 已完成: {completed}",
+                f"- 完成率: {pct:.0%}",
+            ]
+            if current is not None:
+                lines.append(f"- 当前进度: Day {current}")
+            return "\n".join(lines)
+        return "暂无学习进度数据，请先生成学习计划。"
     
     def switch_mode(self, mode: OrchestratorMode):
         """切换模式"""
@@ -764,6 +793,7 @@ class Orchestrator:
         self.domain = None
         self.file_manager = None
         self.rag_engine = None
+        self.progress_tracker = None
         self.tutor.set_rag_engine(None)
         self.tutor.set_doc_meta(None)
         self._intent_cache = {}
