@@ -363,11 +363,16 @@ LANGSMITH_PROJECT=xlearning-agent
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 3: 专业处理层 (Specialists)                               │
 │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐       │
-│  │ RepoAnalyzer  │  │ PDFAnalyzer   │  │ QuizMaker     │       │
-│  │ GitHub 仓库   │  │ PDF 论文      │  │ 题目生成      │       │
-│  │ README 提取   │  │ 结构提取      │  │ 难度控制      │       │
-│  │ 技术栈识别    │  │ 关键信息      │  │ 知识点覆盖    │       │
+│  │ResourceSearcher│  │ RepoAnalyzer  │  │ PDFAnalyzer   │       │
+│  │ 多源资源搜索  │  │ GitHub 仓库   │  │ PDF 论文      │       │
+│  │ Bilibili/YT   │  │ README 提取   │  │ 结构提取      │       │
+│  │ Google/GitHub  │  │ 技术栈识别    │  │ 关键信息      │       │
 │  └───────────────┘  └───────────────┘  └───────────────┘       │
+│  ┌───────────────┐                                              │
+│  │ QuizMaker     │  ← 可选功能                                  │
+│  │ 题目生成      │                                              │
+│  │ 难度控制      │                                              │
+│  └───────────────┘                                              │
 └─────────────────────────────────────────────────────────────────┘
                                    ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -417,6 +422,7 @@ LANGSMITH_PROJECT=xlearning-agent
 | **Tutor Agent** | `agents/tutor.py` | 对话管理、流式输出 | ⭐⭐⭐ | 1天 |
 | **Validator Agent** | `agents/validator.py` | 评分逻辑、报告生成 | ⭐⭐⭐ | 0.5天 |
 | **Orchestrator** | `agents/orchestrator.py` | 状态机思维、流程编排 | ⭐⭐⭐⭐ | 1天 |
+| **ResourceSearcher** | `specialists/resource_searcher.py` | 多平台 API、搜索聚合 | ⭐⭐⭐ | 1天 |
 | **PDF 解析** | `specialist/pdf_analyzer.py` | PyMuPDF、文本提取 | ⭐⭐⭐ | 0.5天 |
 | **GitHub 分析** | `specialist/repo_analyzer.py` | GitHub API、代码理解 | ⭐⭐⭐ | 0.5天 |
 | **Quiz 生成** | `specialist/quiz_maker.py` | 题目设计、难度控制 | ⭐⭐⭐ | 0.5天 |
@@ -579,56 +585,48 @@ class PlannerAgent(ReActAgent):
 
 ## 6.1 完整用户旅程
 
+> **v0.4.0 更新**：核心流程从 Plan→Study→Quiz 简化为 Plan→Study，Quiz 降级为可选。
+> 新增资源聚合能力，学习计划包含真实学习资源。
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      用户使用流程图                              │
+│                      用户使用流程图 (v0.4.0)                     │
 └─────────────────────────────────────────────────────────────────┘
 
 用户打开应用
      │
      ▼
 ┌─────────────┐
-│ 选择模式    │
-│ • 单独模式  │
-│ • 协调模式  │
+│ 首页        │
+│ 上传 PDF /  │
+│ 粘贴 URL /  │
+│ 输入主题    │
 └─────────────┘
      │
-     ├──────────────────────────────────────┐
-     ▼                                      ▼
-┌─────────────────────┐           ┌─────────────────────┐
-│    单独模式         │           │    协调模式         │
-│  精细控制每个步骤   │           │  一键完成全流程     │
-└─────────────────────┘           └─────────────────────┘
-     │                                      │
-     ▼                                      ▼
-┌─────────────────────┐           ┌─────────────────────┐
-│ 步骤1: 创建学习计划 │           │ 输入学习主题/URL    │
-│ • 输入领域描述      │           │ （一次输入即可）    │
-│ • 或 GitHub URL     │           └─────────────────────┘
-│ • 或 上传 PDF       │                     │
-└─────────────────────┘                     ▼
-     │                            ┌─────────────────────┐
-     ▼                            │ 自动执行全流程：    │
-┌─────────────────────┐           │ 1. 分析输入        │
-│ 步骤2: 互动学习     │           │ 2. 生成计划        │
-│ • 选择 Free 模式    │           │ 3. 开始教学        │
-│ • 或 Quiz 模式      │           │ 4. Quiz 验证       │
-└─────────────────────┘           │ 5. 生成报告        │
-     │                            └─────────────────────┘
-     ▼                                      │
-┌─────────────────────┐                     │
-│ 步骤3: 效果验证     │◄────────────────────┘
-│ • 自动生成测验      │
-│ • 即时反馈          │
-│ • 查看进度报告      │
-└─────────────────────┘
+     ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Plan (学习路径)                            │
+│  • Planner 分析输入 → 生成 3-5 阶段学习计划                  │
+│  • ResourceSearcher 为每个阶段搜索真实资源                    │
+│  • 输出：结构化学习路径 + Bilibili/YouTube/Google/GitHub 资源 │
+└──────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Study (学习 + 资源探索)                    │
+│  • Tutor Agent 互动教学（RAG 增强）                          │
+│  • 会话级进度追踪（ProgressTracker）                         │
+│  • 动态调整学习大纲                                          │
+│  • 可随时搜索更多资源                                        │
+│  • [可选] 自测一下 → Quiz                                    │
+└──────────────────────────────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────┐
 │ 完成！查看总结      │
-│ • 学习计划          │
-│ • 知识笔记          │
-│ • 进度报告          │
+│ • 学习路径 + 资源   │
+│ • 学习进度          │
+│ • [可选] 测验报告   │
 └─────────────────────┘
 ```
 
@@ -1058,27 +1056,27 @@ async def get_progress(domain: str):
 
 ## 11.1 中文版（推荐）
 
-**AI 智能学习助手** | Python, HelloAgents/LangGraph, RAG, Streamlit
+**AI 智能学习助手** | Python, LangChain/LangGraph, RAG, Streamlit
 
-- 基于 **ReAct 推理模式**构建，采用**三层 Agent 架构**（协调层→功能层→专业层），实现学习规划、互动教学、效果验证的完整闭环
-- 支持**双模式运行**：单独模式精细控制各 Agent，协调模式一键完成「规划→学习→验证→总结」全流程
+- 基于 **ReAct 推理模式**构建，采用**三层 Agent 架构**（协调层→功能层→专业层），实现学习规划、互动教学、资源聚合的完整闭环
+- 实现**多源资源聚合引擎**（ResourceSearcher），从 Bilibili、YouTube、Google、GitHub 等平台搜索真实学习资源，自动关联到学习路径
+- 支持**动态学习路径**：会话级进度追踪，根据学习反馈动态调整学习大纲和资源推荐
 - 集成 **RAG 知识检索**（ChromaDB），支持 **PDF 论文解析**和 **GitHub 仓库分析**，实现个性化知识问答
-- 设计 **Provider 抽象层**，通过工厂模式支持 OpenAI、DeepSeek 等模型无缝切换
+- 设计 **Provider 抽象层**，通过工厂模式支持 Tongyi/Qwen 等模型无缝切换
 - 接入 **LangSmith** 实现 Agent 全链路追踪，支持 Token 消耗统计和调用链可视化
-- 内置 **Quiz 评测系统**（自动出题 + 评分 + 进度报告），构建完整学习效果评估闭环
-- **[可选]** 使用 **LangGraph** 实现状态机版本 Orchestrator，对比两种工作流编排方式
+- 使用 **LangGraph** 实现状态机版本 Orchestrator，对比两种工作流编排方式
 
 ## 11.2 英文版
 
-**AI Learning Assistant** | Python, HelloAgents/LangGraph, RAG, Streamlit
+**AI Learning Assistant** | Python, LangChain/LangGraph, RAG, Streamlit
 
 - Built on **ReAct reasoning pattern** with a **3-layer Agent architecture** (Coordinator → Functional → Specialist) for end-to-end learning workflow
-- Implemented **dual-mode operation**: standalone mode for granular control, orchestrated mode for one-click learning
+- Implemented **multi-source resource aggregation engine** (ResourceSearcher) that searches real learning resources from Bilibili, YouTube, Google, and GitHub, auto-linking them to learning paths
+- Supported **dynamic learning paths**: session-level progress tracking with adaptive syllabus adjustment based on learner feedback
 - Integrated **RAG-based retrieval** (ChromaDB) with **PDF parsing** and **GitHub repo analysis** for personalized Q&A
 - Designed **Provider abstraction layer** with factory pattern, supporting multiple LLM providers seamlessly
 - Enabled **LangSmith observability** for full-stack tracing, token tracking, and call chain visualization
-- Built-in **Quiz evaluation system** (auto-generation + scoring + progress reports) for learning effectiveness assessment
-- **[Optional]** Implemented **LangGraph** version of Orchestrator for comparison of workflow orchestration approaches
+- Implemented **LangGraph** version of Orchestrator for comparison of workflow orchestration approaches
 
 ---
 

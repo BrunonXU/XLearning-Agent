@@ -99,6 +99,10 @@ class Orchestrator:
         # 意图识别缓存：相同输入不重复调用 LLM
         self._intent_cache: Dict[str, str] = {}
         self._last_intent_meta: Dict[str, str] = {"source": "init", "intent": "ask_question"}
+        
+        # Clarification 状态跟踪：当 _handle_create_plan 走 clarification 分支时，
+        # 保存原始输入，等用户回答后自动合并上下文重新生成计划
+        self._pending_clarification: Optional[str] = None  # 原始用户输入（含 URL 等）
     
     def set_domain(self, domain: str):
         """设置学习领域"""
@@ -333,7 +337,12 @@ class Orchestrator:
             return
 
         # Coordinated + 问答：IDLE 时直接进入学习问答，不自动塞计划模板
+        # 但如果有 pending clarification，需要走 _run_coordinated 检查是否该生成计划
         if self.mode == OrchestratorMode.COORDINATED and ask_like:
+            if self._pending_clarification:
+                # 走 _run_coordinated 让 clarification 回收逻辑判断
+                yield self.run(user_input, history=history, pre_detected_intent=intent, **kwargs)
+                return
             if self.state == OrchestratorState.IDLE:
                 self.state = OrchestratorState.LEARNING
                 self._emit_event("progress", "Orchestrator", "进入学习阶段（问答优先，不自动生成计划）")
@@ -358,7 +367,7 @@ class Orchestrator:
         self._emit_event("progress", "IntentDetection", f"识别到的意图: {intent} (source={source})")
         
         if intent == "create_plan":
-            return self._handle_create_plan(user_input)
+            return self._handle_create_plan(user_input, history=history)
         elif intent == "ask_question":
             return self._handle_ask_question(user_input, history=history)
         elif intent == "start_quiz":
@@ -387,20 +396,56 @@ class Orchestrator:
             f"协调模式意图识别: {intent} (source={source}, state={self.state})"
         )
 
-        # 如果用户明确提到“重新开始”或者切换了话题（简单检测）
+        # 如果用户明确提到"重新开始"或者切换了话题（简单检测）
         if self.state != OrchestratorState.IDLE and self._is_context_reset_signal(user_input):
             self.state = OrchestratorState.IDLE
+            self._pending_clarification = None
             self._emit_event("progress", "Orchestrator", "已重置流程状态")
 
-        # 1. 初始状态下按意图分流：
-        # - create_plan：生成计划
-        # - ask_question/chitchat：直接问答（不强制插入计划模板）
-        # - 其它：按原有路由兜底
+        # === Clarification 回收：如果之前在等用户回答 clarification 问题 ===
+        if self._pending_clarification and intent in {"ask_question", "chitchat", "create_plan"}:
+            # 用户回答了 clarification 问题，或者直接要求生成计划
+            plan_trigger_keywords = [
+                "生成计划", "学习计划", "生成大纲", "做一个计划", "做个计划",
+                "做一个规划", "做个规划", "帮我规划", "规划一下", "给我规划",
+                "给我做一个", "给我做个", "开始规划", "plan", "roadmap",
+                "生成", "规划", "大纲",
+            ]
+            user_wants_plan_now = (
+                intent == "create_plan"
+                or any(kw in user_input for kw in plan_trigger_keywords)
+            )
+
+            if user_wants_plan_now:
+                # 合并原始输入 + 对话历史，生成计划
+                self._emit_event("progress", "Orchestrator", "Clarification 完成，合并上下文生成计划")
+                original_input = self._pending_clarification
+                merged_input = original_input
+                if history:
+                    clarification_answers = []
+                    for h in history:
+                        if h.get("role") == "user" and h["content"] != original_input:
+                            clarification_answers.append(h["content"])
+                    if clarification_answers:
+                        merged_input = (
+                            f"{original_input}\n\n"
+                            f"用户补充信息：\n" + "\n".join(f"- {a}" for a in clarification_answers)
+                        )
+
+                self.state = OrchestratorState.PLANNING
+                plan_msg = self._handle_create_plan(merged_input, history=history)
+                self.state = OrchestratorState.LEARNING
+                return plan_msg
+            else:
+                # 用户还在回答问题，继续问答模式，但保持 clarification 状态
+                return self._handle_ask_question(user_input, history=history)
+
+        # 1. 初始状态下按意图分流
         if self.state == OrchestratorState.IDLE:
             if intent == "create_plan":
                 self.state = OrchestratorState.PLANNING
                 self._emit_event("progress", "Orchestrator", "进入规划阶段")
-                plan_msg = self._handle_create_plan(user_input)
+                plan_msg = self._handle_create_plan(user_input, history=history)
                 self.state = OrchestratorState.LEARNING
                 return plan_msg
 
@@ -417,10 +462,11 @@ class Orchestrator:
         elif intent == "get_report":
             return self._handle_get_report()
         elif intent == "create_plan" and self.state != OrchestratorState.PLANNING:
-            return self._handle_create_plan(user_input)
+            return self._handle_create_plan(user_input, history=history)
         else:
             # 默认：在当前背景下进行辅导
             return self._handle_ask_question(user_input, history=history)
+
     
     def _detect_intent(self, user_input: str) -> str:
         """
@@ -467,7 +513,11 @@ class Orchestrator:
             return "start_quiz"
         if any(kw in input_lower for kw in ["报告", "进度", "report", "progress", "总结"]):
             return "get_report"
-        if any(kw in input_lower for kw in ["生成计划", "学习计划", "plan for", "roadmap", "学习规划", "生成大纲"]):
+        if any(kw in input_lower for kw in [
+            "生成计划", "学习计划", "plan for", "roadmap", "学习规划", "生成大纲",
+            "做一个规划", "做个规划", "帮我规划", "规划一下", "给我规划",
+            "做一个计划", "做个计划", "给我做一个", "给我做个",
+        ]):
             return "create_plan"
         # "分析" + 文档/pdf 相关词 → 视为问答（让 tutor 基于 RAG 分析内容）
         # 用户说"分析这个文档"是想看内容摘要，不是生成学习计划
@@ -528,33 +578,67 @@ class Orchestrator:
             return True
         return False
     
-    def _handle_create_plan(self, user_input: str) -> str:
+    def _extract_context_from_history(self, history: Optional[List[Dict[str, str]]] = None) -> str:
+        """从对话历史中提取用户提供的学习上下文信息（URL、目标、水平等）。
+        
+        用于在用户说"给我做个规划"时，把之前聊天中透露的信息汇总给 Planner。
+        """
+        if not history:
+            return ""
+        
+        user_msgs = [h["content"] for h in history if h.get("role") == "user"]
+        if not user_msgs:
+            return ""
+        
+        # 提取 GitHub URL
+        urls = []
+        for msg in user_msgs:
+            url_match = re.search(r'https?://github\.com/[\w\-]+/[\w\-]+', msg)
+            if url_match:
+                urls.append(url_match.group(0))
+        
+        # 收集所有用户消息作为上下文摘要
+        context_parts = []
+        if urls:
+            context_parts.append(f"学习目标项目: {urls[-1]}")
+        
+        # 把用户的所有消息拼起来（去掉太短的如"好的""继续"）
+        meaningful_msgs = [m for m in user_msgs if len(m.strip()) > 3]
+        if meaningful_msgs:
+            context_parts.append("用户在对话中提供的信息：\n" + "\n".join(f"- {m}" for m in meaningful_msgs))
+        
+        return "\n".join(context_parts)
+
+    def _handle_create_plan(self, user_input: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """处理创建计划请求
         
         如果用户输入太笼统（没有具体主题），先让 Tutor 问清楚再生成。
+        当 clarification 完成后（用户回答了问题），自动合并上下文生成计划。
         """
         # 判断用户是否给了足够的信息来生成计划
-        # GitHub URL：虽然有具体项目，但仍需了解用户的学习目标和水平
-        # 笼统请求（"帮我制定学习计划"）：需要问清楚主题
         vague_patterns = [
             "学习计划", "制定计划", "生成计划", "学习规划", "生成大纲",
             "plan", "roadmap", "帮我规划", "做一个计划", "做个计划",
+            "做一个规划", "做个规划", "帮我规划一下", "规划一下",
+            "给我规划", "给我做一个", "给我做个",
         ]
         input_stripped = user_input.strip()
         
         # GitHub URL 也需要先问清楚学习目标
         is_github_url = bool(re.match(r'https?://github\.com/', input_stripped))
         is_vague_text = (
-            len(input_stripped) <= 20
+            len(input_stripped) <= 30
             and any(kw in input_stripped for kw in vague_patterns)
         )
         
         needs_clarification = is_vague_text or is_github_url
         
         if needs_clarification:
+            # 保存原始输入，等用户回答后自动合并
+            self._pending_clarification = user_input
+            
             has_doc = bool(self.rag_engine)
             if is_github_url:
-                # 提取项目名
                 proj_match = re.search(r'github\.com/[\w-]+/([\w-]+)', input_stripped)
                 proj_name = proj_match.group(1) if proj_match else "该项目"
                 clarify_prompt = (
@@ -568,8 +652,8 @@ class Orchestrator:
                 )
             elif has_doc:
                 doc_title = ""
-                if hasattr(self.tutor, '_doc_meta') and self.tutor._doc_meta:
-                    doc_title = self.tutor._doc_meta.get("title", "")
+                if hasattr(self.tutor, 'doc_meta') and self.tutor.doc_meta:
+                    doc_title = self.tutor.doc_meta.get("title", "")
                 clarify_prompt = (
                     f"用户说：「{user_input}」\n\n"
                     f"用户已上传了学习资料{f'「{doc_title}」' if doc_title else ''}，想制定学习计划。"
@@ -592,17 +676,17 @@ class Orchestrator:
             return self.tutor.run(clarify_prompt)
 
         if not self.domain:
-            self.set_domain(user_input[:50])  # 用输入的前 50 字符作为领域名
+            self.set_domain(user_input[:50])
         
-        # 0. 尝试从 RAG 获取上下文
+        # 0. 从对话历史中提取上下文（URL、学习目标、用户水平等）
+        history_context = self._extract_context_from_history(history)
+        
+        # 1. 尝试从 RAG 获取上下文
         rag_context = ""
         if self.rag_engine:
-            # 始终获取全库摘要（确保 PDF 内容被纳入计划）
             summary_ctx = self.rag_engine.build_context("summary overview", k=5)
-            # 如果用户输入具体，也检索相关内容
             if len(user_input) >= 20:
                 specific_ctx = self.rag_engine.build_context(user_input, k=3)
-                # 合并：摘要 + 针对性检索（去重靠 LLM）
                 if specific_ctx and specific_ctx != summary_ctx:
                     rag_context = summary_ctx + "\n\n" + specific_ctx
                 else:
@@ -610,17 +694,23 @@ class Orchestrator:
             else:
                 rag_context = summary_ctx
                 
-        # 1. 构造输入给 Planner
-        # 如果有 RAG 上下文，将其附在输入后
+        # 2. 构造输入给 Planner — 合并用户输入 + 对话历史上下文 + RAG
         planner_input = user_input
-        if rag_context:
+        if history_context:
             planner_input = (
-                f"用户目标: {user_input}\n\n"
-                f"【重要】以下是用户上传的学习资料内容，请务必基于这些内容生成计划，"
+                f"用户请求: {user_input}\n\n"
+                f"【对话上下文】以下是用户在之前对话中提供的信息，请务必参考：\n{history_context}"
+            )
+        if rag_context:
+            planner_input += (
+                f"\n\n【重要】以下是用户上传的学习资料内容，请务必基于这些内容生成计划，"
                 f"计划中的阶段和知识点必须来自资料中的实际内容：\n{rag_context}"
             )
 
         plan = self.planner.run(planner_input)
+        
+        # 清除 clarification 状态
+        self._pending_clarification = None
         
         # 保存计划
         if self.file_manager:
@@ -677,3 +767,4 @@ class Orchestrator:
         self.tutor.set_rag_engine(None)
         self.tutor.set_doc_meta(None)
         self._intent_cache = {}
+        self._pending_clarification = None
