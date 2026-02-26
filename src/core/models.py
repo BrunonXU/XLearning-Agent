@@ -42,12 +42,17 @@ class ResourceType(str, Enum):
 
 
 class SearchResult(BaseModel):
-    """资源搜索结果"""
+    """资源搜索结果（扩展版：支持质量评分和互动指标）"""
     title: str
     url: str
     platform: str  # bilibili, youtube, google, github, xiaohongshu, wechat
     type: str      # video, article, repo, tutorial, note
     description: str = ""
+    # 新增字段（均有默认值，保持向后兼容）
+    quality_score: float = 0.0
+    recommendation_reason: str = ""
+    engagement_metrics: Dict[str, Any] = Field(default_factory=dict)
+    comments_preview: List[str] = Field(default_factory=list)
 
     def to_dict(self) -> dict:
         """序列化为字典"""

@@ -137,3 +137,11 @@ data/index.json
 *.temp
 *.bak
 *.backup
+
+# ===========================================
+# XHS POC (小红书爬虫临时文件)
+# ===========================================
+scripts/.xhs_cookies.json
+scripts/debug_screenshots/
+scripts/xhs_search_debug.png
+scripts/*_results.json
