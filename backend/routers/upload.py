@@ -44,6 +44,10 @@ def _detect_type(filename: str) -> str:
     ext = Path(filename).suffix.lower()
     if ext == ".pdf":
         return "pdf"
+    if ext in (".md", ".markdown"):
+        return "markdown"
+    if ext == ".txt":
+        return "text"
     return "other"
 
 
@@ -103,6 +107,42 @@ def _extract_pdf_text(content: bytes) -> str:
     return ""
 
 
+async def _process_text_file(material_id: str, plan_id: str, file_path: Path, filename: str):
+    """后台任务：MD/TXT 文件解析 → chunking → ready"""
+    store = get_session_store(plan_id)
+    materials: list = store.setdefault("materials", [])
+
+    def _set_status(status: str):
+        for m in materials:
+            if m["id"] == material_id:
+                m["status"] = status
+                break
+
+    try:
+        _set_status("parsing")
+        await asyncio.sleep(0.3)
+
+        text = file_path.read_text(encoding="utf-8", errors="replace")
+        if text.strip():
+            _set_status("chunking")
+            await asyncio.sleep(0.2)
+            try:
+                from src.rag import RAGEngine
+                rag = RAGEngine(collection_name=f"plan_{plan_id}")
+                rag.add_document(
+                    content=text,
+                    metadata={"source": filename, "plan_id": plan_id, "material_id": material_id},
+                    doc_id=material_id,
+                )
+            except Exception as e:
+                logger.warning(f"RAG ingest failed for {filename}: {e}")
+
+        _set_status("ready")
+    except Exception as e:
+        logger.error(f"Text file processing failed: {e}")
+        _set_status("error")
+
+
 async def _process_url(material_id: str, plan_id: str, url: str):
     """后台任务：抓取 URL 内容 → chunking → ready"""
     store = get_session_store(plan_id)
@@ -153,7 +193,13 @@ async def upload_file(
     })
 
     # 后台处理
-    background_tasks.add_task(_process_pdf, material_id, plan_id, save_path, file.filename)
+    mat_type = _detect_type(file.filename)
+    if mat_type == "pdf":
+        background_tasks.add_task(_process_pdf, material_id, plan_id, save_path, file.filename)
+    elif mat_type in ("markdown", "text"):
+        background_tasks.add_task(_process_text_file, material_id, plan_id, save_path, file.filename)
+    else:
+        background_tasks.add_task(_process_text_file, material_id, plan_id, save_path, file.filename)
 
     return UploadResponse(
         id=material_id,

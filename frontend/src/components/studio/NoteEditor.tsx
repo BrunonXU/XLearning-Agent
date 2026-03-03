@@ -9,7 +9,7 @@ import type { Note } from '../../types'
 interface NoteEditorProps {
   note?: Note | null       // null = 新建
   planId: string
-  onSave: (title: string, content: string) => Promise<void>
+  onSave: (data: { id?: string; title: string; content: string }) => void
   onClose: () => void
 }
 
@@ -27,7 +27,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, planId, onSave, on
   const handleSave = async () => {
     if (!title.trim()) return
     setIsSaving(true)
-    await onSave(title.trim(), content)
+    onSave({ id: note?.id, title: title.trim(), content })
     setIsSaving(false)
     onClose()
   }

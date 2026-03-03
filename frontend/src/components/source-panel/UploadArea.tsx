@@ -21,9 +21,11 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ planId }) => {
     setError('')
     setUploading(true)
     try {
+      const ALLOWED_EXTS = ['.pdf', '.md', '.markdown', '.txt']
       for (const file of Array.from(files)) {
-        if (!file.name.endsWith('.pdf')) {
-          setError('目前仅支持 PDF 文件')
+        const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+        if (!ALLOWED_EXTS.includes(ext)) {
+          setError('支持 PDF、Markdown、TXT 文件')
           continue
         }
         await uploadFile(file)
@@ -71,16 +73,16 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ planId }) => {
             : 'border-[#DADCE0] hover:border-[#1A73E8] hover:bg-[#F8F9FA]'
         }`}
         role="button"
-        aria-label="点击或拖拽上传 PDF"
+        aria-label="点击或拖拽上传文件（PDF、MD、TXT）"
       >
         <span className="text-2xl">{uploading ? '⏳' : '📄'}</span>
         <p className="text-sm text-[#5F6368] text-center leading-tight">
-          {uploading ? '上传中...' : '拖拽 PDF 到此处\n或点击选择文件'}
+          {uploading ? '上传中...' : '拖拽文件到此处\n或点击选择（PDF / MD / TXT）'}
         </p>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,.md,.markdown,.txt"
           multiple
           className="hidden"
           onChange={e => handleFiles(e.target.files)}
