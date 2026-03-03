@@ -114,7 +114,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '' }) => {
     <div className="flex flex-col h-full overflow-hidden bg-white dark:bg-dark-bg">
       {/* 标题栏 */}
       <div className="flex items-center justify-between px-4 h-12 flex-shrink-0 border-b border-[#DADCE0] dark:border-dark-border">
-        <span className="text-sm font-semibold text-[#202124] dark:text-dark-text">Studio</span>
+        <span className="text-base font-semibold text-[#202124] dark:text-dark-text">Studio</span>
         <button onClick={() => setDevMode(!devMode)}
           className={`text-xs px-2 py-0.5 rounded-full transition-all ${devMode ? 'bg-blue-50 text-blue-600 border border-blue-300' : 'text-gray-400 hover:text-gray-600'}`}
           aria-label="开发者模式">DEV</button>
@@ -127,8 +127,8 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '' }) => {
             <button key={t.type} onClick={() => handleToolClick(t.type, t.label)}
               disabled={!!loadingTool}
               className={`relative flex flex-col items-start p-3 rounded-xl border ${t.color} hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer min-h-[72px]`}>
-              <span className={`text-lg ${t.iconBg}`}>{t.icon}</span>
-              <span className="text-xs font-medium text-gray-700 mt-1">{t.label}</span>
+              <span className={`text-xl ${t.iconBg}`}>{t.icon}</span>
+              <span className="text-sm font-medium text-gray-700 mt-1">{t.label}</span>
               {loadingTool === t.type && (
                 <div className="absolute inset-0 bg-white/60 rounded-xl flex items-center justify-center">
                   <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -155,7 +155,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '' }) => {
                   {/* 标题 + 元信息 */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 dark:text-dark-text truncate">{item.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-sm text-gray-400 mt-0.5">
                       {item.kind === 'note' ? '笔记' : item.type === 'learning-plan' ? '学习计划' : item.type === 'study-guide' ? '学习指南' : item.type === 'flashcards' ? '闪卡' : item.type === 'quiz' ? '测验' : '报告'}
                       {' · '}{fmt(item.createdAt)}
                     </p>

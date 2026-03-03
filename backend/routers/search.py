@@ -115,7 +115,7 @@ async def search_stream(body: SearchRequest):
                             user_selected=True,
                         )
                     ),
-                    timeout=15.0,
+                    timeout=45.0,
                 )
                 items = [
                     SearchResultItem(

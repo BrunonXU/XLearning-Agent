@@ -43,7 +43,6 @@ def _random_delay() -> float:
     return random.uniform(BrowserAgent.MIN_DELAY, BrowserAgent.MAX_DELAY)
 
 
-
 class BrowserAgent:
     """基于 Playwright 的浏览器代理，支持混合模式（浏览器 + API 拦截）。
 
@@ -59,7 +58,7 @@ class BrowserAgent:
     DETAIL_CONCURRENCY = 3  # 详情页并行获取的最大 tab 数
     SEARCH_FULL_COUNT = 60  # 搜索全量获取数（滚动加载）
     DETAIL_TOP_K = 20  # 获取详情的 top K 条结果
-    SCROLL_COUNT = 6  # 搜索页滚动次数
+    SCROLL_COUNT = 2  # 搜索页滚动次数（减少等待时间）
     SCROLL_PX = 800  # 每次滚动像素
     DETAIL_SCROLL_COUNT = 3  # 详情页滚动次数（触发评论加载）
     DETAIL_SCROLL_PX = 500  # 详情页每次滚动像素
@@ -92,14 +91,31 @@ class BrowserAgent:
     # ------------------------------------------------------------------
 
     async def launch(self, config: PlatformConfig) -> None:
-        """启动浏览器实例（带反检测配置），如需登录则加载 Cookie。"""
+        """启动浏览器实例（带反检测配置），如需登录则加载 Cookie。
+
+        - 有 Cookie 时最小化运行，用户不会被打扰
+        - 没有 Cookie 时弹出浏览器让用户手动登录（最多等 3 分钟）
+        - 有 Cookie 但验证失效时，自动删除旧 Cookie 并重新弹出登录
+        """
         try:
             from playwright.async_api import async_playwright
 
             self._playwright = await async_playwright().start()
+
+            # 判断是否有 cookie 文件
+            has_cookie_file = False
+            if config.requires_login and config.cookie_file:
+                cookie_path = Path(config.cookie_file)
+                has_cookie_file = cookie_path.exists()
+
+            # 有 cookie 就最小化，没有就正常显示让用户登录
+            launch_args = ["--disable-blink-features=AutomationControlled"]
+            if has_cookie_file:
+                launch_args.append("--start-minimized")
+
             self._browser = await self._playwright.chromium.launch(
                 headless=False,
-                args=["--disable-blink-features=AutomationControlled"],
+                args=launch_args,
             )
 
             user_agent = random.choice(_USER_AGENTS)
@@ -114,15 +130,31 @@ class BrowserAgent:
                 "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
             )
 
-            # 加载 Cookie
+            # 加载 Cookie 并验证
             if config.requires_login and config.cookie_file:
                 cookie_path = Path(config.cookie_file)
                 if cookie_path.exists():
                     cookies = json.loads(cookie_path.read_text(encoding="utf-8"))
                     await self._context.add_cookies(cookies)
                     logger.info(f"已加载 {len(cookies)} 条 Cookie ({config.name})")
+
+                    # 验证 cookie 是否有效
+                    is_valid = await self._verify_cookie_valid(config)
+                    if not is_valid:
+                        logger.warning(f"Cookie 已失效 ({config.name})，删除旧 Cookie 并重新登录")
+                        cookie_path.unlink(missing_ok=True)
+                        # 关闭当前最小化的浏览器，重新以可见模式启动
+                        await self._browser.close()
+                        await self._playwright.stop()
+                        self._browser = None
+                        self._context = None
+                        self._playwright = None
+                        # 递归调用，这次没有 cookie 文件了，会走登录流程
+                        return await self.launch(config)
                 else:
-                    logger.warning(f"Cookie 文件不存在: {config.cookie_file}")
+                    # 没有 cookie 文件，弹出浏览器让用户登录
+                    logger.info(f"Cookie 文件不存在，将弹出浏览器供用户登录 ({config.name})")
+                    await self._interactive_login(config, cookie_path)
 
             logger.info(f"浏览器已启动 (UA: {user_agent[:50]}...)")
         except Exception as e:
@@ -130,16 +162,116 @@ class BrowserAgent:
             self._browser = None
             self._context = None
 
+    async def _verify_cookie_valid(self, config: PlatformConfig) -> bool:
+        """验证 cookie 是否有效：访问小红书首页，检查是否有登录态。"""
+        if config.name != "xiaohongshu":
+            return True
+        page = await self._context.new_page()
+        try:
+            await page.goto(
+                "https://www.xiaohongshu.com",
+                wait_until="domcontentloaded",
+                timeout=15_000,
+            )
+            await asyncio.sleep(2)
+            # 检查是否存在可见的"登录"按钮 — 如果存在说明未登录
+            has_login_btn = await page.evaluate("""() => {
+                const btns = document.querySelectorAll('button, a, span, div');
+                for (const el of btns) {
+                    const t = (el.textContent || '').trim();
+                    if (t === '登录' || t === '立即登录' || t === '登录/注册') {
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }""")
+            if has_login_btn:
+                logger.info("检测到登录按钮，Cookie 无效")
+                return False
+            logger.info("Cookie 验证通过")
+            return True
+        except Exception as e:
+            logger.warning(f"Cookie 验证异常: {e}")
+            return False
+        finally:
+            await page.close()
+
+    async def _interactive_login(self, config: PlatformConfig, cookie_path: Path) -> None:
+        """弹出浏览器让用户手动登录小红书，等待最多 3 分钟。
+
+        检测方式：每 3 秒轮询一次，检查"登录"按钮是否消失。
+        比 wait_for_selector 更可靠，不会误匹配其他元素。
+        """
+        page = await self._context.new_page()
+        logger.info(
+            f"请在弹出的浏览器中登录 {config.name}，"
+            f"登录成功后会自动保存 Cookie（最多等待 3 分钟）"
+        )
+        try:
+            await page.goto("https://www.xiaohongshu.com", wait_until="domcontentloaded")
+            await asyncio.sleep(3)
+
+            # 轮询检测登录状态（最多 3 分钟）
+            max_wait = 180  # 秒
+            poll_interval = 3  # 秒
+            elapsed = 0
+            logged_in = False
+
+            while elapsed < max_wait:
+                try:
+                    has_login_btn = await page.evaluate("""() => {
+                        const btns = document.querySelectorAll('button, a, span, div');
+                        for (const el of btns) {
+                            const t = (el.textContent || '').trim();
+                            if (t === '登录' || t === '立即登录' || t === '登录/注册') {
+                                const rect = el.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }""")
+                    if not has_login_btn:
+                        # 登录按钮消失了，再等 2 秒确认 cookie 稳定
+                        await asyncio.sleep(2)
+                        logged_in = True
+                        break
+                except Exception:
+                    pass
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+            if logged_in:
+                cookies = await self._context.cookies()
+                if cookies:
+                    cookie_path.parent.mkdir(parents=True, exist_ok=True)
+                    cookie_path.write_text(
+                        json.dumps(cookies, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    logger.info(
+                        f"登录成功，已保存 {len(cookies)} 条 Cookie 到 {config.cookie_file}"
+                    )
+            else:
+                logger.warning("等待登录超时（3分钟），请重试")
+        except Exception as e:
+            logger.warning(f"登录流程异常: {e}")
+        finally:
+            await page.close()
+
     async def close(self) -> None:
         """关闭浏览器实例，保存 Cookie，释放资源。"""
         try:
             if self._context:
-                # 保存 Cookie（遍历所有已知的 cookie_file 配置）
                 try:
                     cookies = await self._context.cookies()
                     if cookies:
-                        # 保存到默认位置（小红书）
                         cookie_path = Path("scripts/.xhs_cookies.json")
+                        cookie_path.parent.mkdir(parents=True, exist_ok=True)
                         cookie_path.write_text(
                             json.dumps(cookies, ensure_ascii=False, indent=2),
                             encoding="utf-8",
@@ -172,7 +304,9 @@ class BrowserAgent:
                 if data.get("success") or data.get("code") == 0:
                     items = data.get("data", {}).get("items", [])
                     self._intercepted_search.extend(items)
-                    logger.debug(f"[拦截] 搜索: +{len(items)} 条 (累计 {len(self._intercepted_search)})")
+                    logger.debug(
+                        f"[拦截] 搜索: +{len(items)} 条 (累计 {len(self._intercepted_search)})"
+                    )
 
             elif "/api/sns/web/v2/comment/page" in url and response.status == 200:
                 data = await response.json()
@@ -232,7 +366,6 @@ class BrowserAgent:
 
         对于 use_hybrid_mode=True 的平台，注册 API 响应拦截器，
         从拦截到的 JSON 中提取结构化数据。
-        搜索阶段全量获取（~60 条），通过多次滚动触发分页 API。
         """
         if not self._context:
             logger.error("浏览器未启动，无法搜索")
@@ -255,7 +388,9 @@ class BrowserAgent:
             search_url = config.search_url_template.format(query=quote(query))
             logger.info(f"搜索 {config.name}: {query}")
             try:
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=self.PAGE_TIMEOUT)
+                await page.goto(
+                    search_url, wait_until="domcontentloaded", timeout=self.PAGE_TIMEOUT
+                )
             except Exception as e:
                 logger.warning(f"搜索页加载异常 ({config.name}): {e}")
 
@@ -278,7 +413,7 @@ class BrowserAgent:
                 await page.evaluate(f"window.scrollBy(0, {self.SCROLL_PX})")
                 await asyncio.sleep(random.uniform(1.5, 2.5))
 
-            # 提取结果
+            # 提取结果：优先混合模式 > JS 提取 > CSS 提取
             if config.use_hybrid_mode and self._intercepted_search:
                 results = ResourceCollector.extract_from_intercepted_json(
                     self._intercepted_search, config
@@ -309,11 +444,7 @@ class BrowserAgent:
     async def fetch_details_parallel(
         self, notes: List[RawSearchResult], config: PlatformConfig, top_k: int = 20
     ) -> List[RawSearchResult]:
-        """并行获取 top_k 条结果的详情页（正文 + 评论）。
-
-        使用 asyncio.Semaphore 控制最多 DETAIL_CONCURRENCY 个 tab 并发。
-        每个 tab 独立注册 API 响应拦截器。
-        """
+        """并行获取 top_k 条结果的详情页（正文 + 评论）。"""
         if not self._context:
             logger.error("浏览器未启动，无法获取详情")
             return notes
@@ -326,7 +457,6 @@ class BrowserAgent:
                 await self._enforce_platform_interval(config.name)
                 detail = await self.fetch_detail(note.url, config)
                 if detail:
-                    # 合并详情数据到 note
                     if detail.content_snippet:
                         note.content_snippet = detail.content_snippet
                     if detail.top_comments:
@@ -334,7 +464,6 @@ class BrowserAgent:
                         note.comments = [c.get("text", "") for c in detail.top_comments]
                     if detail.image_urls:
                         note.image_urls = detail.image_urls
-                    # 更新互动指标（如果详情页有更精确的数据）
                     if detail.likes > 0:
                         note.engagement_metrics["likes"] = detail.likes
                     if detail.favorites > 0:
@@ -342,34 +471,25 @@ class BrowserAgent:
                     if detail.comments_count > 0:
                         note.engagement_metrics["comments_count"] = detail.comments_count
 
-        tasks = [
-            _fetch_one(note, i)
-            for i, note in enumerate(to_fetch)
-        ]
+        tasks = [_fetch_one(note, i) for i, note in enumerate(to_fetch)]
         await asyncio.gather(*tasks, return_exceptions=True)
-
         return notes
 
     async def fetch_detail(
         self, url: str, config: PlatformConfig, retry: int = 0
     ) -> Optional[ResourceDetail]:
-        """进入详情页提取内容和评论，支持最多 DETAIL_MAX_RETRIES 次重试。
-
-        优先使用拦截到的 API 数据，回退到 __INITIAL_STATE__ 或 DOM 提取。
-        """
+        """进入详情页提取内容和评论，支持最多 DETAIL_MAX_RETRIES 次重试。"""
         if not self._context:
             return None
 
         page = await self._context.new_page()
         page.set_default_timeout(self.PAGE_TIMEOUT)
 
-        # 提取 note_id 用于匹配拦截数据
         note_id = ""
         m = re.search(r"/explore/([a-f0-9]+)", url)
         if m:
             note_id = m.group(1)
 
-        # 为此 tab 注册独立的响应拦截器
         detail_handler = self._make_detail_response_handler(note_id)
         if config.use_hybrid_mode:
             page.on("response", detail_handler)
@@ -377,7 +497,9 @@ class BrowserAgent:
         try:
             logger.debug(f"获取详情: {url[:80]}...")
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=self.PAGE_TIMEOUT)
+                await page.goto(
+                    url, wait_until="domcontentloaded", timeout=self.PAGE_TIMEOUT
+                )
             except Exception as e:
                 logger.warning(f"详情页加载异常: {e}")
                 if retry < self.DETAIL_MAX_RETRIES:
@@ -387,30 +509,22 @@ class BrowserAgent:
                 return None
 
             await asyncio.sleep(_random_delay())
-
-            # 关闭可能的登录弹窗
             await self._dismiss_login_popup(page)
 
-            # 滚动触发评论加载
             for _ in range(self.DETAIL_SCROLL_COUNT):
                 await page.evaluate(f"window.scrollBy(0, {self.DETAIL_SCROLL_PX})")
                 await asyncio.sleep(0.8)
             await asyncio.sleep(1)
 
-            # 提取正文（三级回退）
             content = await self._extract_content_from_page(page)
-
-            # 提取图片 URL
             image_urls = await ResourceCollector.extract_image_urls(page)
 
-            # 提取评论（优先拦截数据）
             top_comments: List[Dict[str, str]] = []
             async with self._get_comment_lock():
                 raw_comments = self._intercepted_comments.get(note_id, [])
             if raw_comments:
                 top_comments = ResourceCollector.parse_intercepted_comments(raw_comments)
             else:
-                # 回退到 DOM 提取
                 top_comments = await ResourceCollector.extract_top_comments(page, config)
 
             detail = ResourceDetail(
@@ -526,10 +640,7 @@ class BrowserAgent:
     async def extract_image_content(
         self, image_urls: List[str], max_images: int = 3
     ) -> List[str]:
-        """[TODO: 未来实现] 下载前 max_images 张图片，调用多模态 LLM 提取图片内容。
-
-        MVP 阶段返回空列表。
-        """
+        """[TODO: 未来实现] 下载前 max_images 张图片，调用多模态 LLM 提取图片内容。"""
         return []
 
     # ------------------------------------------------------------------
@@ -543,7 +654,6 @@ class BrowserAgent:
         """
         try:
             current_url = page.url
-            # 小红书：如果被重定向到首页或登录页，说明 Cookie 失效
             if config.name == "xiaohongshu":
                 if "search_result" not in current_url and "explore" not in current_url:
                     logger.warning(f"Cookie 过期 ({config.name})，需要重新登录")
@@ -555,7 +665,6 @@ class BrowserAgent:
     async def _dismiss_login_popup(self, page: Any) -> None:
         """自动检测并关闭登录弹窗。"""
         try:
-            # 常见的关闭按钮选择器
             close_selectors = [
                 ".close-button",
                 ".login-close",
@@ -575,21 +684,40 @@ class BrowserAgent:
             pass
 
     async def _detect_captcha(self, page: Any) -> bool:
-        """检测验证码/反爬页面。"""
+        """检测验证码/反爬页面。
+
+        只检查可见的验证码元素，避免误判（小红书正常页面 JS 中也包含 captcha 字样）。
+        """
         try:
-            content = await page.content()
-            captcha_indicators = [
-                "captcha",
-                "验证码",
-                "人机验证",
-                "请完成安全验证",
-                "滑动验证",
-            ]
-            content_lower = content.lower()
-            for indicator in captcha_indicators:
-                if indicator in content_lower:
-                    return True
-            return False
+            is_captcha_visible = await page.evaluate("""() => {
+                const selectors = [
+                    '#captcha-div',
+                    '.captcha-container',
+                    '.verify-container',
+                    '.slide-verify',
+                    '[class*="captcha"][class*="modal"]',
+                    '[class*="verify"][class*="modal"]',
+                    '[class*="captcha"][class*="wrapper"]',
+                ];
+                for (const sel of selectors) {
+                    const el = document.querySelector(sel);
+                    if (el) {
+                        const rect = el.getBoundingClientRect();
+                        const style = window.getComputedStyle(el);
+                        if (rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') {
+                            return true;
+                        }
+                    }
+                }
+                const body = document.body;
+                if (body && body.innerText.trim().length < 50) {
+                    const title = document.title.toLowerCase();
+                    if (title.includes('验证') || title.includes('captcha') || title.includes('安全')) {
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+            return is_captcha_visible
         except Exception:
             return False
-

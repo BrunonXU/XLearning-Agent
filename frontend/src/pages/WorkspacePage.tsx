@@ -33,17 +33,29 @@ const WorkspacePage: React.FC = () => {
     })
   }
 
-  // 12.1: 页面加载时从后端恢复会话状态
+  // 12.1: 页面加载时恢复会话状态（localStorage 优先，后端兜底）
   useEffect(() => {
     if (!planId) { setIsRestoring(false); return }
-    // 设置 studioStore 的 activePlanId
+    // 三个 store 都切换到当前 planId（从 localStorage cache 恢复）
     useStudioStore.getState().setActivePlan(planId)
+    useChatStore.getState().setActivePlan(planId)
+    useSourceStore.getState().setActivePlan(planId)
+
+    // 如果 localStorage 已有数据，不再请求后端
+    const hasLocalMessages = useChatStore.getState().messages.length > 0
+    const hasLocalMaterials = useSourceStore.getState().materials.length > 0
+
+    if (hasLocalMessages && hasLocalMaterials) {
+      setIsRestoring(false)
+      return
+    }
+
+    // localStorage 没数据时尝试从后端恢复
     fetch(`/api/session/${planId}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return
-        // 恢复对话历史
-        if (data.messages?.length > 0) {
+        if (!hasLocalMessages && data.messages?.length > 0) {
           const msgs: ChatMessage[] = data.messages.map((m: any) => ({
             id: m.id ?? `restored-${Date.now()}-${Math.random()}`,
             role: m.role,
@@ -52,8 +64,7 @@ const WorkspacePage: React.FC = () => {
           }))
           useChatStore.getState().setMessages(msgs)
         }
-        // 恢复材料列表
-        if (data.materials?.length > 0) {
+        if (!hasLocalMaterials && data.materials?.length > 0) {
           const mats: Material[] = data.materials.map((m: any) => ({
             id: m.id,
             type: m.type ?? 'other',
@@ -96,6 +107,9 @@ const WorkspacePage: React.FC = () => {
       topNav={
         <TopNav
           planTitle={planTitle}
+          onTitleChange={(newTitle) => {
+            if (planId) usePlanStore.getState().updatePlan(planId, { title: newTitle })
+          }}
           onToggleDark={toggleDark}
           isDark={isDark}
         />

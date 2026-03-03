@@ -82,16 +82,16 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
           {left}
         </div>
 
-        {/* 左拖拽条 — 宽 5px，hover 变蓝，中间有竖线视觉提示 */}
+        {/* 左拖拽条 — 宽 8px，hover 变蓝 */}
         <div
           className="relative flex-shrink-0 flex items-center justify-center cursor-col-resize group"
-          style={{ width: '5px', background: '#DADCE0' }}
+          style={{ width: '8px', background: '#E8EAED' }}
           onMouseDown={startDragLeft}
           role="separator"
           aria-orientation="vertical"
           aria-label="调整左侧面板宽度"
         >
-          <div className="absolute inset-y-0 w-px bg-[#DADCE0] group-hover:bg-primary transition-colors duration-150" />
+          <div className="absolute inset-y-0 w-1 rounded-full bg-[#DADCE0] group-hover:bg-primary transition-colors duration-150" />
         </div>
 
         {/* 中间对话区 */}
@@ -105,13 +105,13 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
         {/* 右拖拽条 */}
         <div
           className="relative flex-shrink-0 flex items-center justify-center cursor-col-resize group"
-          style={{ width: '5px', background: '#DADCE0' }}
+          style={{ width: '8px', background: '#E8EAED' }}
           onMouseDown={startDragRight}
           role="separator"
           aria-orientation="vertical"
           aria-label="调整右侧面板宽度"
         >
-          <div className="absolute inset-y-0 w-px bg-[#DADCE0] group-hover:bg-primary transition-colors duration-150" />
+          <div className="absolute inset-y-0 w-1 rounded-full bg-[#DADCE0] group-hover:bg-primary transition-colors duration-150" />
         </div>
 
         {/* 右侧 Studio 面板 */}

@@ -57,13 +57,13 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
     abortRef.current?.abort()
     abortRef.current = new AbortController()
 
-    // 15s 超时
+    // 60s 超时
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = setTimeout(() => {
       abortRef.current?.abort()
       setIsSearching(false)
       setError('搜索超时，请重试')
-    }, 15000)
+    }, 60000)
 
     const platforms = selectedPlatforms.size > 0 ? Array.from(selectedPlatforms) : undefined
 

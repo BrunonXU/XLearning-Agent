@@ -3,7 +3,6 @@ import { MaterialList } from './MaterialList'
 import { SearchPanel } from './SearchPanel'
 import { UploadArea } from './UploadArea'
 import { useSourceStore } from '../../store/sourceStore'
-import { useChatStore } from '../../store/chatStore'
 import type { SearchResult } from '../../types'
 
 type ActiveTab = 'upload' | 'search'
@@ -28,23 +27,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '' }) => {
 
   const handleSelect = async (id: string) => {
     setSelectedId(prev => prev === id ? null : id)
-    // 点击材料 → 获取摘要 → 插入系统消息
-    if (selectedId !== id) {
-      try {
-        const res = await fetch(`/api/material/${id}/summary?plan_id=${planId}`)
-        if (res.ok) {
-          const data = await res.json()
-          useChatStore.getState().addMessage({
-            id: `sys-${Date.now()}`,
-            role: 'system',
-            content: data.summary,
-            createdAt: new Date().toISOString(),
-          })
-        }
-      } catch {
-        // 静默失败，不影响 UI
-      }
-    }
+    // 点击材料 → 选中高亮，不再插入系统消息
   }
 
   const handleAddFromSearch = (results: SearchResult[]) => {

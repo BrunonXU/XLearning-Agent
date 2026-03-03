@@ -131,6 +131,7 @@ class SearchOrchestrator:
             logger.error(f"搜索执行异常: {e}")
 
         if not all_raw:
+            await self.close()
             return []
 
         # 4. 质量评分
@@ -157,6 +158,9 @@ class SearchOrchestrator:
 
         # 8. 写入缓存
         self._cache.set(query, platforms, final)
+
+        # 9. 关闭浏览器释放资源
+        await self.close()
 
         return final
 
@@ -197,18 +201,10 @@ class SearchOrchestrator:
 
             results = await self._browser_agent.search_platform(query, config)
 
-            # 小红书：按综合分排序 + 并行获取 top 20 详情
+            # 小红书：按综合分排序（跳过详情页获取，加快搜索速度）
             if config.name == "xiaohongshu" and results:
                 results.sort(key=_xhs_composite_score, reverse=True)
-                results = await self._browser_agent.fetch_details_parallel(
-                    results, config, top_k=BrowserAgent.DETAIL_TOP_K
-                )
-                # 用去重评论数更新 engagement_metrics
-                for note in results:
-                    if note.top_comments:
-                        unique_comments = self._deduplicate_comments(note.top_comments)
-                        note.deduplicated_comment_count = len(unique_comments)
-                        note.engagement_metrics["comments_count"] = len(unique_comments)
+                results = results[:limit]  # 只保留 top N
 
             return results
 
