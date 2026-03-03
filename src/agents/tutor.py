@@ -16,7 +16,7 @@ import logging
 from typing import Optional, List, Dict, Any, Generator
 
 from .base import BaseAgent
-from src.core.models import SessionMode, Quiz, Question
+from src.core.models import SessionMode, Quiz, Question, SearchResult
 from src.rag import RAGEngine
 from src.providers.base import Message
 from src.specialists.resource_searcher import ResourceSearcher
@@ -136,46 +136,6 @@ class TutorAgent(BaseAgent):
             logger.warning(f"[TutorAgent] Failed to build progress context: {e}")
             return ""
 
-    def _try_resource_search(self, user_input: str) -> list:
-        """
-        检测用户输入是否为资源搜索请求，如果是则调用 ResourceSearcher。
-
-        Returns:
-            SearchResult 列表（如果不是搜索请求或搜索器不可用则返回空列表）
-        """
-        if not self._resource_searcher:
-            return []
-
-        # 资源搜索关键词检测
-        search_keywords = [
-            "搜索资源", "找资源", "推荐资源", "搜索更多",
-            "search resource", "find resource", "recommend",
-            "有什么资源", "有哪些资源", "学习资源",
-        ]
-        input_lower = user_input.lower()
-        is_search_request = any(kw in input_lower for kw in search_keywords)
-
-        if not is_search_request:
-            return []
-
-        try:
-            self._emit_event("tool_start", self.name, f"Searching resources for: {user_input[:50]}...")
-            results = self._resource_searcher.search(user_input)
-            self._emit_event("tool_end", self.name, f"Found {len(results)} resources")
-
-            # 来源追踪：记录搜索来源
-            if results:
-                platforms = list({r.platform for r in results})
-                self._track_source({
-                    "type": "search",
-                    "platforms": platforms,
-                    "query": user_input,
-                })
-
-            return results
-        except Exception as e:
-            logger.warning(f"[TutorAgent] Resource search failed: {e}")
-            return []
     
     def run(
         self,
@@ -203,6 +163,45 @@ class TutorAgent(BaseAgent):
             return self._handle_quiz_mode(user_input)
         else:
             return self._handle_free_mode(user_input, history, use_rag)
+
+    def run_with_resources(
+        self,
+        user_input: str,
+        search_results: list,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        """处理带搜索结果的用户输入，生成包含资源推荐的回复。
+
+        由 Orchestrator 在搜索完成后调用，将搜索结果注入回复。
+        """
+        self._reset_sources()
+
+        # 记录搜索来源
+        if search_results:
+            platforms = list({r.platform for r in search_results})
+            self._track_source({
+                "type": "search",
+                "platforms": platforms,
+                "query": user_input,
+            })
+
+        prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=True)
+        self._emit_event("progress", self.name, "Generating tutor response...")
+        response = self._call_llm(prompt)
+        self._emit_event("progress", self.name, "Response generated.")
+
+        # 附加搜索结果
+        if search_results:
+            resource_text = "\n\n🔍 推荐资源：\n"
+            for r in search_results:
+                resource_text += f"- [{r.title}]({r.url}) ({r.platform})\n"
+            response += resource_text
+
+        # 追加参考来源
+        response += self._build_reference_section(self._current_sources)
+
+        return response
+
     
     def _handle_free_mode(
         self,
@@ -214,20 +213,10 @@ class TutorAgent(BaseAgent):
         # 重置来源追踪
         self._reset_sources()
 
-        # 检测是否为资源搜索请求，如果是则调用 ResourceSearcher
-        search_results = self._try_resource_search(user_input)
-
         prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=use_rag)
         self._emit_event("progress", self.name, "Generating tutor response...")
         response = self._call_llm(prompt)
         self._emit_event("progress", self.name, "Response generated.")
-
-        # 如果有资源搜索结果，附加到回复中
-        if search_results:
-            resource_text = "\n\n🔍 推荐资源：\n"
-            for r in search_results:
-                resource_text += f"- [{r.title}]({r.url}) ({r.platform})\n"
-            response += resource_text
 
         # 追加参考来源区块
         reference_section = self._build_reference_section(self._current_sources)

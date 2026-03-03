@@ -49,7 +49,13 @@ def _markdown_to_html(text: str) -> str:
         return ""
 
     def _inline(line: str) -> str:
-        """处理行内格式：**粗体**, *斜体*, `代码`"""
+        """处理行内格式：[链接](url), **粗体**, *斜体*, `代码`"""
+        # Markdown 链接 → 可点击超链接（必须在粗体/斜体之前处理）
+        line = re.sub(
+            r'\[([^\]]+)\]\((https?://[^)]+)\)',
+            r'<a href="\2" target="_blank" style="color:#3B82F6;text-decoration:underline;">\1</a>',
+            line,
+        )
         line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
         line = re.sub(r'__(.+?)__', r'<strong>\1</strong>', line)
         line = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', line)
@@ -235,11 +241,8 @@ def render_resource_card(resource):
 def render_chat_tab():
     """Render the Chat tab with messages and input."""
     
-    # Check if we have a session
-    if not st.session_state.current_session_id:
-        from src.ui.layout import render_home_view
-        render_home_view()
-        return
+    # Note: Session check is handled by render_main_area() in layout.py
+    # This function is only called when current_session_id is not None
     
     messages = get_current_messages()
     
@@ -331,6 +334,45 @@ def _render_message(msg: dict):
                 st.markdown(f"**{source}** {f'(p.{page})' if page else ''}")
                 st.caption(f"_{snippet}_")
 
+# ============================================================================
+# Platform Selector（平台选择器）
+# ============================================================================
+
+PLATFORM_OPTIONS = {
+    "社区笔记": [("📕 小红书", "xiaohongshu")],
+    "网页文章": [("🌐 Google", "google")],
+    "视频": [("▶️ YouTube", "youtube"), ("📺 B站", "bilibili")],
+}
+
+
+def _render_platform_selector():
+    """渲染平台选择器（可折叠的 chip/tag 多选）。
+    
+    注意：不使用 st.columns，因为此函数在 columns 内部调用，
+    Streamlit 不允许嵌套 columns。
+    处理中时禁用选择器。
+    """
+    if "selected_platforms" not in st.session_state:
+        st.session_state.selected_platforms = []
+    
+    # 处理中时不显示选择器
+    if st.session_state.is_processing:
+        return
+    
+    with st.expander("🔍 选择搜索平台（可选，不选则搜索全部）", expanded=False):
+        selected = []
+        for category, platforms in PLATFORM_OPTIONS.items():
+            st.caption(category)
+            for label, key in platforms:
+                if st.checkbox(
+                    label,
+                    key=f"platform_{key}",
+                    value=key in st.session_state.selected_platforms,
+                ):
+                    selected.append(key)
+        st.session_state.selected_platforms = selected
+
+
 def _render_chat_input():
     """Render the chat input area at the bottom（GPT 风格：Enter 发送）。"""
     
@@ -340,6 +382,9 @@ def _render_chat_input():
             st.experimental_rerun()
     
     st.markdown('<div class="chat-input-wrap">', unsafe_allow_html=True)
+
+    # 平台选择器
+    _render_platform_selector()
 
     if st.session_state.get("clear_chat_input", False):
         st.session_state.chat_input_val = ""
@@ -1062,7 +1107,26 @@ def render_resources_panel():
             if day_res or text_res:
                 all_resources.append((f"📅 Day {day_num}: {d['title']}", day_res, text_res))
 
-    # 2. 从对话消息中提取推荐的资源链接
+    # 2. 从 session 中提取浏览器搜索结果（SearchResult 对象）
+    search_results_data = st.session_state.current_session.get("_search_results", [])
+    if search_results_data:
+        from src.core.models import SearchResult
+        search_result_objects = []
+        for item in search_results_data:
+            try:
+                if isinstance(item, dict):
+                    sr = SearchResult.model_validate(item)
+                elif isinstance(item, SearchResult):
+                    sr = item
+                else:
+                    continue
+                search_result_objects.append(sr)
+            except Exception:
+                continue
+        if search_result_objects:
+            all_resources.append(("🔍 浏览器搜索结果", search_result_objects, []))
+
+    # 3. 从对话消息中提取推荐的资源链接
     chat_resources = _extract_resources_from_messages(get_current_messages())
     if chat_resources:
         all_resources.append(("💬 对话中推荐的资源", [], chat_resources))

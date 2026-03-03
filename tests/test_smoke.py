@@ -46,15 +46,13 @@ class TestSkeletonSmoke:
 
     def test_agent_imports(self):
         """测试 Agent 模块导入"""
-        from src.agents import PlannerAgent, TutorAgent, ValidatorAgent, Orchestrator
+        from src.agents import PlannerAgent, TutorAgent, Orchestrator
         assert PlannerAgent is not None
         assert TutorAgent is not None
-        assert ValidatorAgent is not None
         assert Orchestrator is not None
 
     def test_specialists_imports(self):
         """测试 Specialists 模块导入"""
-        from src.specialists import RepoAnalyzer, PDFAnalyzer, QuizMaker
+        from src.specialists import RepoAnalyzer, PDFAnalyzer
         assert RepoAnalyzer is not None
         assert PDFAnalyzer is not None
-        assert QuizMaker is not None

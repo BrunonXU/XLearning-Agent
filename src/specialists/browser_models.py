@@ -20,6 +20,7 @@ class RawSearchResult(BaseModel):
     content_snippet: str = ""
     top_comments: List[Dict[str, Any]] = Field(default_factory=list)  # 高赞评论 [{text, likes, author}]
     image_urls: List[str] = Field(default_factory=list)  # 笔记图片 URL 列表
+    deduplicated_comment_count: int = 0  # 去重后的评论数量，用于替代 API 返回的原始 comments_count 参与互动分计算
 
 
 class ResourceDetail(BaseModel):

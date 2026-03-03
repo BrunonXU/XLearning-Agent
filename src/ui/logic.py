@@ -190,11 +190,15 @@ def process_pending_chat(should_rerun: bool = True):
         print(f"[DEBUG] Processing input length {len(user_input)} with history length {len(history)}...")
         trace_callback("progress", "Orchestrator", "正在生成回答...")
 
+        # 获取用户选择的平台
+        selected_platforms = st.session_state.get("selected_platforms", [])
+        platforms = selected_platforms if selected_platforms else None
+
         accumulated = ""
         chunk_count = 0
         stream_timeout = 60  # 单次流式输出最长 60 秒
         stream_start = _time.time()
-        for chunk in orchestrator.stream(user_input, history=history):
+        for chunk in orchestrator.stream(user_input, history=history, platforms=platforms):
             chunk_count += 1
             accumulated += chunk
             if st.session_state.current_session:

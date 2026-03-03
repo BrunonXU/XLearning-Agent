@@ -27,6 +27,8 @@ from src.core.file_manager import FileManager
 from src.core.models import SessionState, SessionMode
 from src.core.progress import ProgressTracker
 from src.rag import RAGEngine
+from src.core.search_keywords import is_search_intent
+from src.specialists.resource_searcher import ResourceSearcher
 
 
 class OrchestratorMode(str, Enum):
@@ -78,6 +80,13 @@ class Orchestrator:
         # 初始化 Agents 并注入回调
         self.planner = PlannerAgent(on_event=on_event)
         self.tutor = TutorAgent(on_event=on_event)
+
+        # 注入资源搜索器
+        try:
+            self.tutor.set_resource_searcher(ResourceSearcher())
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"ResourceSearcher init failed: {e}")
         
         # 文件管理器（领域确定后初始化）
         self.file_manager: Optional[FileManager] = None
@@ -287,10 +296,17 @@ class Orchestrator:
         user_input: str,
         history: Optional[List[Dict[str, str]]] = None,
         pre_detected_intent: Optional[str] = None,
+        platforms: Optional[List[str]] = None,
         **kwargs
     ) -> str:
         """
         处理用户输入
+        
+        Args:
+            user_input: 用户输入
+            history: 对话历史
+            pre_detected_intent: 预检测的意图
+            platforms: 用户选择的搜索平台列表
         """
         mode_cn = "自动协调" if self.mode == OrchestratorMode.COORDINATED else "独立"
         self._emit_event("progress", "Orchestrator", f"正在以 {mode_cn} 模式启动")
@@ -299,6 +315,7 @@ class Orchestrator:
                 user_input,
                 history=history,
                 pre_detected_intent=pre_detected_intent,
+                platforms=platforms,
                 **kwargs
             )
         else:
@@ -306,6 +323,7 @@ class Orchestrator:
                 user_input,
                 history=history,
                 pre_detected_intent=pre_detected_intent,
+                platforms=platforms,
                 **kwargs
             )
 
@@ -313,12 +331,18 @@ class Orchestrator:
         self,
         user_input: str,
         history: Optional[List[Dict[str, str]]] = None,
+        platforms: Optional[List[str]] = None,
         **kwargs
     ) -> Generator[str, None, None]:
         """
         流式处理用户输入。
 
         仅在 Tutor Free 问答路径启用真正流式，其它意图退化为一次性输出。
+        
+        Args:
+            user_input: 用户输入
+            history: 对话历史
+            platforms: 用户选择的搜索平台列表
         """
         # 自动设置 domain（首次输入时）
         if not self.domain and user_input.strip():
@@ -337,7 +361,7 @@ class Orchestrator:
         if self.mode == OrchestratorMode.COORDINATED and ask_like:
             if self._pending_clarification:
                 # 走 _run_coordinated 让 clarification 回收逻辑判断
-                yield self.run(user_input, history=history, pre_detected_intent=intent, **kwargs)
+                yield self.run(user_input, history=history, pre_detected_intent=intent, platforms=platforms, **kwargs)
                 return
             if self.state == OrchestratorState.IDLE:
                 self.state = OrchestratorState.LEARNING
@@ -346,13 +370,14 @@ class Orchestrator:
             return
 
         # 其它路径（plan/search_resource/report）保持一次性逻辑
-        yield self.run(user_input, history=history, pre_detected_intent=intent, **kwargs)
+        yield self.run(user_input, history=history, pre_detected_intent=intent, platforms=platforms, **kwargs)
 
     def _run_standalone(
         self,
         user_input: str,
         history: Optional[List[Dict[str, str]]] = None,
         pre_detected_intent: Optional[str] = None,
+        platforms: Optional[List[str]] = None,
         **kwargs
     ) -> str:
         """
@@ -372,7 +397,9 @@ class Orchestrator:
         elif intent == "ask_question":
             return self._handle_ask_question(user_input, history=history)
         elif intent == "search_resource":
-            return self._handle_search_resource(user_input, history=history)
+            # 传递用户选择的平台
+            user_selected = platforms is not None and len(platforms) > 0
+            return self._handle_search_resource(user_input, history=history, platforms=platforms if user_selected else None)
         elif intent == "get_report":
             return self._handle_get_report()
         else:
@@ -384,6 +411,7 @@ class Orchestrator:
         user_input: str,
         history: Optional[List[Dict[str, str]]] = None,
         pre_detected_intent: Optional[str] = None,
+        platforms: Optional[List[str]] = None,
         **kwargs
     ) -> str:
         """
@@ -461,7 +489,9 @@ class Orchestrator:
 
         # 2. 如果已经在学习中，根据意图路由
         if intent == "search_resource":
-            return self._handle_search_resource(user_input, history=history)
+            # 传递用户选择的平台
+            user_selected = platforms is not None and len(platforms) > 0
+            return self._handle_search_resource(user_input, history=history, platforms=platforms if user_selected else None)
         elif intent == "get_report":
             return self._handle_get_report()
         elif intent == "create_plan" and self.state != OrchestratorState.PLANNING:
@@ -534,11 +564,7 @@ class Orchestrator:
             return "ask_question"
 
         # 优先级 2: search_resource
-        if any(kw in input_lower for kw in [
-            "搜索资源", "找资源", "推荐资源", "search resource",
-            "搜索更多资源", "找学习资源", "推荐学习资源",
-            "有什么资源", "资源推荐",
-        ]):
+        if is_search_intent(input_lower):
             return "search_resource"
 
         if any(kw in input_lower for kw in ["报告", "进度", "report", "progress", "总结"]):
@@ -757,9 +783,55 @@ class Orchestrator:
         """处理问答请求"""
         return self.tutor.run(user_input, mode=SessionMode.FREE, history=history)
     
-    def _handle_search_resource(self, user_input: str, history: Optional[List[Dict[str, str]]] = None) -> str:
-        """处理资源搜索请求 — 路由到 TutorAgent（已集成 ResourceSearcher）"""
-        return self.tutor.run(user_input, mode=SessionMode.FREE, history=history)
+    def _handle_search_resource(
+        self, user_input: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        platforms: Optional[List[str]] = None,
+    ) -> str:
+        """处理资源搜索请求 — 直接调用 ResourceSearcher，不再绕道 TutorAgent。"""
+        try:
+            # 获取搜索器实例（已在 __init__ 中注入到 tutor）
+            searcher = self.tutor._resource_searcher
+            if not searcher:
+                import logging
+                logging.getLogger(__name__).warning("[Orchestrator] ResourceSearcher not available, falling back to chat")
+                return self._handle_ask_question(user_input, history=history)
+
+            # 判断用户是否主动选择了平台
+            user_selected = platforms is not None and len(platforms) > 0
+            results = searcher.search(user_input, platforms=platforms, user_selected=user_selected)
+
+            # 存入 session state 供 Resources 面板展示
+            self._store_search_results(results, user_input)
+
+            # 传给 TutorAgent 生成带资源推荐的回复
+            return self.tutor.run_with_resources(user_input, results, history=history)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"搜索失败: {e}")
+            return self._handle_ask_question(user_input, history=history)
+
+    def _store_search_results(self, results, query: str):
+        """将搜索结果存入 session state 供 Resources 面板展示。"""
+        try:
+            import streamlit as st
+            if st.session_state.get("current_session") is not None:
+                existing = st.session_state.current_session.get("_search_results", [])
+                new_items = []
+                for r in results:
+                    item = r.model_dump() if hasattr(r, "model_dump") else r.__dict__.copy()
+                    item["_query"] = query
+                    new_items.append(item)
+                seen_urls = {r.get("url") for r in existing if isinstance(r, dict)}
+                for item in new_items:
+                    if item.get("url") not in seen_urls:
+                        existing.append(item)
+                        seen_urls.add(item.get("url"))
+                st.session_state.current_session["_search_results"] = existing
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Failed to store search results: {e}")
+
     
     def _handle_get_report(self) -> str:
         """处理获取报告请求"""

@@ -2,7 +2,7 @@
 
 ## 概述
 
-本设计将现有的 `ResourceSearcher`（基于 httpx API 调用）替换为基于 Playwright + LLM 的智能浏览器 Agent 架构。新系统通过真实浏览器模拟人类浏览行为，在六大平台（小红书、Bilibili、YouTube、GitHub、Google、微信公众号）上搜索学习资源，并利用 LLM 对内容进行多维度质量评估。
+本设计将现有的 `ResourceSearcher`（基于 httpx API 调用）替换为基于 Playwright + LLM 的智能浏览器 Agent 架构。新系统通过真实浏览器模拟人类浏览行为，在六大平台（小红书、Stack Overflow、YouTube、GitHub、Google、微信公众号）上搜索学习资源，并利用 LLM 对内容进行多维度质量评估。
 
 ### 设计目标
 
@@ -114,7 +114,7 @@ graph TB
         
         subgraph 平台配置
             PC1[小红书 Config<br/>混合模式]
-            PC2[Bilibili Config]
+            PC2[Stack Overflow Config]
             PC3[YouTube Config]
             PC4[GitHub Config]
             PC5[Google Config]
@@ -188,7 +188,7 @@ sequenceDiagram
 class BrowserResourceSearcher:
     """基于浏览器 Agent 的资源搜索器，替代原有 ResourceSearcher"""
     
-    PLATFORMS = ["bilibili", "youtube", "google", "github", "xiaohongshu", "wechat"]
+    PLATFORMS = ["stackoverflow", "youtube", "google", "github", "xiaohongshu", "wechat"]
     TIMEOUT = 60  # 总超时时间（秒）
     DEFAULT_TOP_K = 10  # 默认返回前 10 条
     
@@ -825,7 +825,7 @@ def search_result_strategy(draw):
     return SearchResult(
         title=draw(st.text(min_size=1, max_size=100)),
         url=draw(st.text(min_size=1, max_size=200)),
-        platform=draw(st.sampled_from(["bilibili", "youtube", "google", "github", "xiaohongshu", "wechat"])),
+        platform=draw(st.sampled_from(["stackoverflow", "youtube", "google", "github", "xiaohongshu", "wechat"])),
         type=draw(st.sampled_from(["video", "article", "repo", "tutorial", "note"])),
         description=draw(st.text(max_size=200)),
         quality_score=draw(st.floats(min_value=0.0, max_value=1.0, allow_nan=False)),
@@ -840,7 +840,7 @@ def raw_search_result_strategy(draw):
     return RawSearchResult(
         title=draw(st.text(min_size=1, max_size=100)),
         url=draw(st.text(min_size=1, max_size=200)),
-        platform=draw(st.sampled_from(["bilibili", "youtube", "google", "github", "xiaohongshu", "wechat"])),
+        platform=draw(st.sampled_from(["stackoverflow", "youtube", "google", "github", "xiaohongshu", "wechat"])),
         resource_type=draw(st.sampled_from(["video", "article", "repo", "tutorial", "note"])),
         description=draw(st.text(max_size=200)),
         engagement_metrics=draw(st.dictionaries(st.text(min_size=1, max_size=20), st.integers(min_value=0), max_size=5)),

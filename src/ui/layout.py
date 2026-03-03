@@ -298,6 +298,11 @@ def render_workspace_view():
         elif active_tab == "Trace":
             from src.ui.renderer import render_trace_tab
             render_trace_tab()
+
+        # Brain 区域 — 始终显示在所有 Tab 内容下方
+        from src.ui.renderer import render_brain_tab
+        render_brain_tab()
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     components.html(_WORKSPACE_JS, height=0)

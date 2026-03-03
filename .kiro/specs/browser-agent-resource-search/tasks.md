@@ -29,8 +29,8 @@
 - [x] 2. Checkpoint - 确保数据模型测试通过
   - 确保所有测试通过，如有问题请询问用户。
 
-- [-] 3. 实现平台配置与搜索缓存
-  - [ ] 3.1 创建 `src/specialists/platform_configs.py`，定义 PlatformConfig 和 DetailSelectors 数据类，以及六个平台的配置实例
+- [x] 3. 实现平台配置与搜索缓存
+  - [x] 3.1 创建 `src/specialists/platform_configs.py`，定义 PlatformConfig 和 DetailSelectors 数据类，以及六个平台的配置实例
     - 每个平台配置包含：name, search_url_template, result_selector, title_selector, link_selector, description_selector, resource_type, detail_selectors
     - PlatformConfig 新增字段：requires_login, cookie_file, use_js_extraction, js_extract_fn, use_hybrid_mode, api_intercept_patterns, detail_extract_method
     - DetailSelectors 新增字段：comment_likes_selector, initial_state_path
@@ -38,7 +38,7 @@
     - 定义 PLATFORM_CONFIGS 字典，键为平台名称字符串
     - _Requirements: 2.1, 2.4, 6.5.1_
 
-  - [ ] 3.2 创建 `src/specialists/search_cache.py`，实现 SearchCache 类
+  - [x] 3.2 创建 `src/specialists/search_cache.py`，实现 SearchCache 类
     - 实现 get(query, platforms) → Optional[List[SearchResult]]
     - 实现 set(query, platforms, results) → None
     - 实现 _make_key(query, platforms) → str，使用 query + sorted platforms 生成哈希键
@@ -56,8 +56,8 @@
     - 使用 time mock 验证超过 TTL 后缓存返回 None
     - **Validates: Requirements 7.4**
 
-- [ ] 4. 实现 ResourceCollector 数据采集组件
-  - [ ] 4.1 创建 `src/specialists/resource_collector.py`，实现 ResourceCollector 类
+- [x] 4. 实现 ResourceCollector 数据采集组件
+  - [x] 4.1 创建 `src/specialists/resource_collector.py`，实现 ResourceCollector 类
     - 实现 extract_search_results(page, config) → List[RawSearchResult]：从搜索结果页提取标题、URL、描述
     - 实现 extract_search_results_js(page, config) → List[RawSearchResult]：使用 JS evaluate 整体提取（小红书等平台）
     - 实现 extract_from_intercepted_json(items, config) → List[RawSearchResult]：从拦截到的 API JSON 中提取搜索结果（混合模式）
@@ -82,8 +82,8 @@
     - 验证 ResourceDetail 的 comments 列表长度不超过 10
     - **Validates: Requirements 4.3**
 
-- [ ] 5. 实现 QualityScorer LLM 质量评估组件
-  - [ ] 5.1 创建 `src/specialists/quality_scorer.py`，实现 QualityScorer 类
+- [x] 5. 实现 QualityScorer LLM 质量评估组件
+  - [x] 5.1 创建 `src/specialists/quality_scorer.py`，实现 QualityScorer 类
     - 实现 score_batch(results) → List[ScoredResult]：批量评估资源质量
     - 实现 _build_scoring_prompt(result) → str：构建包含四个维度（互动指标、内容深度、评论质量、时效性）的评分 prompt
     - 实现 _parse_score_response(response) → Tuple[float, str]：解析 LLM 返回的评分和推荐理由
@@ -102,11 +102,11 @@
     - 使用 hypothesis 生成 engagement_metrics 部分或全部缺失的 RawSearchResult，验证仍返回有效评分
     - **Validates: Requirements 3.6**
 
-- [ ] 6. Checkpoint - 确保核心组件测试通过
+- [x] 6. Checkpoint - 确保核心组件测试通过
   - 确保所有测试通过，如有问题请询问用户。
 
 - [ ] 7. 实现 BrowserAgent 浏览器引擎
-  - [ ] 7.1 创建 `src/specialists/browser_agent.py`，实现 BrowserAgent 类
+  - [x] 7.1 创建 `src/specialists/browser_agent.py`，实现 BrowserAgent 类
     - 实现 launch(config)：启动 Playwright Chromium 浏览器实例，配置随机 User-Agent、浏览器指纹；如 config.requires_login 则加载 Cookie
     - 实现 search_platform(query, config) → List[RawSearchResult]：在指定平台执行搜索；对 use_hybrid_mode 平台注册 API 响应拦截器，从拦截到的 JSON 中提取结构化数据；搜索阶段全量获取（~60 条），通过多次滚动触发分页 API
     - 实现 fetch_details_parallel(notes, config, top_k=20) → List[RawSearchResult]：并行获取 top_k 条结果的详情页，使用 asyncio.Semaphore(3) 控制最多 3 个 tab 并发，每个 tab 独立注册 API 响应拦截器
@@ -138,7 +138,7 @@
     - **Validates: Requirements 6.3**
 
 - [ ] 8. 实现 SearchOrchestrator 搜索调度器
-  - [ ] 8.1 创建 `src/specialists/search_orchestrator.py`，实现 SearchOrchestrator 类
+  - [x] 8.1 创建 `src/specialists/search_orchestrator.py`，实现 SearchOrchestrator 类
     - 实现 search_all_platforms(query, platforms, timeout, top_k) → List[SearchResult]
     - 实现 expand_keywords(query) → List[str]：[TODO 接口预留] MVP 阶段返回 [query]，未来使用 LLM 扩展 2-3 个相关关键词
     - 使用 asyncio.gather 并发搜索所有指定平台
@@ -174,22 +174,22 @@
     - **Validates: Requirements 5.1, 5.3**
 
 - [ ] 9. 实现 BrowserResourceSearcher 主入口并替换原有 ResourceSearcher
-  - [ ] 9.1 在 `src/specialists/resource_searcher.py` 中实现 BrowserResourceSearcher 类
+  - [x] 9.1 在 `src/specialists/resource_searcher.py` 中实现 BrowserResourceSearcher 类
     - 保持与原 ResourceSearcher.search(query, platforms) 相同的方法签名
     - 在 search() 中使用 asyncio.run() 包装异步调用，保持同步接口
     - 默认搜索全部 6 个平台，支持用户指定平台列表
     - 默认返回前 10 条结果
     - _Requirements: 5.4, 5.5_
 
-  - [ ] 9.2 更新 `src/agents/orchestrator.py` 和 `src/agents/planner.py` 中的导入，将 ResourceSearcher 替换为 BrowserResourceSearcher
+  - [x] 9.2 更新 `src/agents/orchestrator.py` 和 `src/agents/planner.py` 中的导入，将 ResourceSearcher 替换为 BrowserResourceSearcher
     - 确保调用代码无需修改（接口兼容）
     - _Requirements: 5.5_
 
-- [ ] 10. Checkpoint - 确保核心搜索流程测试通过
+- [x] 10. Checkpoint - 确保核心搜索流程测试通过
   - 确保所有测试通过，如有问题请询问用户。
 
 - [ ] 11. UI 资源卡片增强
-  - [ ] 11.1 修改 `src/ui/renderer.py` 中的 render_resource_card 函数
+  - [x] 11.1 修改 `src/ui/renderer.py` 中的 render_resource_card 函数
     - 当 quality_score > 0 时，在卡片中显示质量评分（星级或分数形式）
     - 当 recommendation_reason 非空时，显示推荐理由文本
     - 当 engagement_metrics 非空时，显示关键互动指标（点赞数、评论数等）
@@ -206,7 +206,7 @@
     - 验证仅包含原始字段的 SearchResult 渲染不抛出异常
     - **Validates: Requirements 9.4**
 
-- [ ] 12. 最终 Checkpoint - 确保所有测试通过
+- [x] 12. 最终 Checkpoint - 确保所有测试通过
   - 确保所有测试通过，如有问题请询问用户。
 
 ## Notes
