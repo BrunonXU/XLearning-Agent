@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    color: #202124;
+    background-color: #FFFFFF;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  /* 自定义滚动条 */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #DADCE0 transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #DADCE0;
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: #9AA0A6;
+  }
+
+  /* 骨架屏占位 */
+  .skeleton {
+    @apply animate-pulse bg-surface-tertiary rounded;
+  }
+}
+
+/* animate-in / animate-out（简单实现） */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zoom-in-95 { from { transform: scale(0.95); } to { transform: scale(1); } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+.animate-in { animation: fade-in 150ms ease, zoom-in-95 150ms ease; }
+.animate-out { animation: fade-out 100ms ease; }

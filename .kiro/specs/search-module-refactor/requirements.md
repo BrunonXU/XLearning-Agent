@@ -42,7 +42,7 @@
 **User Story:** 作为开发者，我希望搜索意图的关键词检测只在一个地方维护，以避免两层关键词列表不一致导致搜索漏触发或误触发。
 
 #### Acceptance Criteria
-
+可以帮我看看tasks运行到哪了吗
 1. THE System SHALL 维护唯一一份 Search_Keyword_List，供所有搜索意图检测逻辑引用
 2. THE Search_Keyword_List SHALL 包含 Orchestrator 和 TutorAgent 当前两份列表的并集（至少包含：搜索资源、找资源、推荐资源、search resource、搜索更多资源、找学习资源、推荐学习资源、有什么资源、资源推荐、有哪些资源、学习资源、find resource、recommend、搜索更多）
 3. WHEN Orchestrator 检测到 Search_Intent 时，THE Orchestrator SHALL 使用统一的 Search_Keyword_List 进行匹配

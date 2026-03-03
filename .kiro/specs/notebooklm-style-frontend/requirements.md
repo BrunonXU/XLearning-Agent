@@ -2,137 +2,348 @@
 
 ## 简介
 
-将 XLearning-Agent 的前端体验向 Google NotebookLM 的交互范式靠拢。NotebookLM 的核心设计哲学是：**以"笔记本/来源"为中心，而非以"对话"为中心**。用户先上传学习材料（PDF、URL、文本），系统将其组织为一个"学习笔记本"，AI 的所有回答都锚定在这些来源上，并提供可追溯的引用。
+将 XLearning-Agent 的前端体验向 Google NotebookLM 的交互范式靠拢。NotebookLM 的核心设计哲学是：**以"学习材料/笔记"为中心，而非以"对话"为中心**。用户先上传学习材料（PDF、GitHub 链接），系统将其组织为一个"学习空间"，AI 的所有回答都锚定在这些材料上。
 
-本 spec 聚焦于前端 UI/UX 的重新设计，将现有的 Streamlit 三栏 Tab 布局改造为 NotebookLM 风格的三区域布局：左侧来源面板、中间 AI 对话区、右侧笔记/输出区。同时保留并整合现有的 AI 学习辅导功能（Planner、Tutor、ResourceSearcher、ProgressTracker）。
+本 spec 聚焦于：
+1. 将现有 Streamlit 前端迁移到 **React + TypeScript + Tailwind CSS**（前端）+ **FastAPI**（后端）
+2. 实现 NotebookLM 风格的三区域布局：左侧学习材料面板、中间 AI 对话区、右侧 Studio 面板
+3. 保留并整合现有 AI 学习辅导功能（Planner、Tutor、ResourceSearcher、ProgressTracker、LangGraph Orchestrator）
 
 ---
 
 ## 术语表
 
-- **Notebook**: 一个学习会话的容器，对应现有的 Session，包含来源、对话历史和笔记
-- **Source**: 用户上传或添加的学习材料，包括 PDF、GitHub URL、网页链接、纯文本
-- **Source_Panel**: 左侧来源管理面板，展示当前 Notebook 中所有 Source 的列表
-- **Chat_Area**: 中间 AI 对话区域，用于与 Tutor/Planner 进行交互
-- **Notes_Panel**: 右侧笔记与输出面板，展示学习计划、资源卡片、进度等结构化内容
-- **Grounding_Badge**: 每条 AI 回复下方的来源引用标记，显示回答依据了哪些 Source
-- **Audio_Overview**: 类 NotebookLM 的"音频概览"功能的文字版替代——自动生成的学习摘要卡片
-- **Study_Guide**: 由 AI 自动生成的结构化学习指南，包含关键概念、学习路径、常见问题
-- **Tutor**: 辅导 Agent（`src/agents/tutor.py`），负责基于 Source 回答学习问题
-- **Planner**: 规划 Agent（`src/agents/planner.py`），负责生成结构化学习计划
-- **Orchestrator**: 编排器（`src/agents/orchestrator.py`），负责意图识别和 Agent 调度
-- **ResourceSearcher**: 资源搜索专家模块，封装多平台搜索能力
-- **ProgressTracker**: 每日学习进度追踪机制
+- **学习材料面板（Source Panel）**：左侧面板，管理用户上传的 PDF 和搜索到的资源
+- **对话区（Chat Area）**：中间区域，与 Tutor/Planner 进行多轮对话
+- **Studio 面板（Studio Panel）**：右侧面板，从上到下分三个区域：今日任务（常驻）、学习工具卡片（学习计划、进度报告、测验、学习指南、闪卡、学习笔记）、内容库（AI 生成历史 / 我的笔记），开发者模式下额外显示调试工具卡片
+- **Tutor**：辅导 Agent（`src/agents/tutor.py`），负责基于材料回答学习问题，支持多轮上下文
+- **Planner**：规划 Agent，负责生成结构化学习计划
+- **Orchestrator**：编排器（`src/agents/orchestrator.py`），负责意图识别和 Agent 调度
+- **ResourceSearcher**：资源搜索专家模块，封装多平台搜索能力
+- **QualityScorer**：资源质量评估模块（`src/specialists/quality_scorer.py`），对搜索结果进行多维度评分
+- **LangGraph Orchestrator**：基于 LangGraph 的编排器（`src/agents/orchestrator_langgraph.py`），可与标准 Orchestrator 切换
 
 ---
 
 ## 需求
 
-### 需求 1：三区域布局（NotebookLM 核心布局）
+### 需求 1：技术栈迁移（Streamlit → React + FastAPI）
 
-**用户故事：** 作为学习者，我希望界面分为来源管理、AI 对话、笔记输出三个清晰区域，以便我能同时管理学习材料、与 AI 交互并查看结构化输出。
-
-#### 验收标准
-
-1. THE UI SHALL 采用三列布局：左侧 Source_Panel（宽度约 20%）、中间 Chat_Area（宽度约 50%）、右侧 Notes_Panel（宽度约 30%）
-2. WHEN 用户在移动端或窄屏（宽度 < 768px）访问时，THE UI SHALL 将三列折叠为单列垂直布局，Source_Panel 和 Notes_Panel 以可折叠抽屉形式呈现
-3. THE Source_Panel SHALL 始终显示当前 Notebook 中所有已添加 Source 的列表，每个 Source 显示图标、名称和状态（处理中/就绪/错误）
-4. THE Chat_Area SHALL 占据页面中央，包含消息历史和底部输入框，输入框始终固定在底部可见
-5. THE Notes_Panel SHALL 根据当前上下文动态展示内容：无计划时显示 Study_Guide 生成入口，有计划时显示学习进度和资源卡片
-6. WHEN 用户点击 Source_Panel 中的某个 Source 时，THE UI SHALL 高亮显示该 Source 并在 Chat_Area 中显示该 Source 的摘要信息
-
-### 需求 2：来源管理面板（Source Panel）
-
-**用户故事：** 作为学习者，我希望能在左侧面板中集中管理所有学习材料，像 NotebookLM 一样清晰地看到"我的学习来源"，以便我知道 AI 的回答基于哪些材料。
+**用户故事：** 作为开发者，我希望前端迁移到 React + TypeScript + Tailwind CSS，后端使用 FastAPI，以便获得更好的交互体验和更灵活的 UI 控制能力。
 
 #### 验收标准
 
-1. THE Source_Panel SHALL 在顶部提供"+ 添加来源"按钮，点击后展开上传选项：上传 PDF、粘贴 URL（GitHub/网页）、输入纯文本
-2. WHEN 用户添加 Source 时，THE Source_Panel SHALL 显示处理进度指示器（解析中 → 分块中 → 就绪），处理完成后显示绿色就绪状态
-3. THE Source_Panel SHALL 为每个 Source 显示：类型图标（📄 PDF / 🔗 URL / 📝 文本）、名称（截断至 20 字符）、就绪状态标记
-4. WHEN 用户将鼠标悬停在 Source 上时，THE Source_Panel SHALL 显示操作菜单：查看详情、从 Notebook 移除
-5. IF 用户尝试移除 Source 时，THEN THE Source_Panel SHALL 显示确认对话框，提示该操作将影响基于此 Source 的 AI 回答
-6. THE Source_Panel SHALL 在底部显示当前 Notebook 的统计信息：来源数量、总知识切片数（chunks）
-7. WHEN Notebook 中没有任何 Source 时，THE Source_Panel SHALL 显示引导提示："添加来源，让 AI 基于你的材料回答"
+1. THE 前端 SHALL 使用 React + TypeScript + Tailwind CSS 构建，不再依赖 Streamlit
+2. THE 后端 SHALL 提供 FastAPI REST API，替代 Streamlit 的 session state 管理
+3. THE FastAPI 后端 SHALL 暴露以下核心端点：`POST /api/chat`（对话）、`POST /api/upload`（文件上传）、`POST /api/search`（资源搜索）、`GET /api/studio/{type}`（生成 Studio 内容）、`POST /api/notes`（新建笔记）、`PUT /api/notes/{id}`（编辑笔记）、`DELETE /api/notes/{id}`（删除笔记）、`PUT /api/plan/day/{day_id}/complete`（标记 Day 完成）
+4. THE 前端 SHALL 通过 WebSocket 或 SSE（Server-Sent Events）接收 Tutor 的流式输出
+5. WHEN 用户刷新页面时，THE 前端 SHALL 从后端恢复当前会话状态（对话历史、已上传材料、已生成 Studio 内容）
+6. THE 后端 SHALL 保持与现有 Python 模块（`src/agents/`、`src/specialists/`）的兼容性，不重写核心 AI 逻辑
 
-### 需求 3：AI 对话区（Chat Area）增强
+---
 
-**用户故事：** 作为学习者，我希望 AI 的每条回复都清晰标注引用了哪些来源，像 NotebookLM 一样让我知道答案的依据，以便我能信任并深入追溯。
+### 需求 2：三区域布局（NotebookLM 核心布局）
 
-#### 验收标准
-
-1. THE Chat_Area SHALL 在每条 AI 回复下方显示 Grounding_Badge，列出本次回复引用的 Source 名称和片段
-2. WHEN 用户点击 Grounding_Badge 中的某个来源引用时，THE Chat_Area SHALL 在弹出层中显示原始引用片段的完整内容
-3. THE Chat_Area SHALL 支持在输入框中使用 "@" 符号触发 Source 选择器，允许用户指定针对某个特定 Source 提问
-4. WHEN AI 正在生成回复时，THE Chat_Area SHALL 显示流式输出效果（逐字/逐句出现），并在消息底部显示"正在思考..."状态
-5. THE Chat_Area SHALL 在消息列表顶部提供"建议问题"区域，显示 3-5 个基于当前 Source 内容自动生成的推荐问题
-6. WHEN 用户的 Notebook 中没有 Source 时，THE Chat_Area SHALL 在输入框上方显示提示横幅："添加来源后，AI 将基于你的材料回答"
-7. THE Chat_Area 的输入框 SHALL 支持多行输入，按 Shift+Enter 换行，按 Enter 发送
-
-### 需求 4：笔记与输出面板（Notes Panel）
-
-**用户故事：** 作为学习者，我希望右侧面板能像 NotebookLM 的"笔记"功能一样，自动整理 AI 生成的学习计划、资源推荐和关键概念，以便我不需要手动整理学习成果。
+**用户故事：** 作为学习者，我希望界面分为学习材料管理、AI 对话、Studio 输出三个清晰区域，以便我能同时管理学习材料、与 AI 交互并查看结构化学习内容。
 
 #### 验收标准
 
-1. THE Notes_Panel SHALL 包含以下可切换的内容区块：Study_Guide（学习指南）、Learning_Plan（学习计划与进度）、Resources（资源卡片）
-2. WHEN 用户首次进入 Notebook 且已添加 Source 时，THE Notes_Panel SHALL 显示"生成学习指南"按钮，点击后调用 Planner 生成 Study_Guide
-3. THE Study_Guide SHALL 包含：关键概念列表（5-10 个）、常见问题（FAQ，3-5 条）、推荐学习路径概述
-4. WHEN Planner 生成学习计划后，THE Notes_Panel SHALL 自动切换到 Learning_Plan 视图，以交互式时间线展示每日学习进度
-5. THE Learning_Plan 视图 SHALL 允许用户点击每天的节点查看详情，并提供"标记完成"按钮
-6. THE Resources 视图 SHALL 以卡片形式展示 ResourceSearcher 搜索到的学习资源，每张卡片包含平台图标、标题、简介和可点击链接
-7. THE Notes_Panel SHALL 在每个内容区块右上角提供"导出"按钮，支持将内容导出为 Markdown 格式
+1. THE UI SHALL 采用三列布局：左侧学习材料面板（宽度约 20%）、中间对话区（宽度约 50%）、右侧 Studio 面板（宽度约 30%）
+2. THE 对话区 SHALL 始终可见，不被其他面板遮挡，输入框固定在底部
+3. THE 三列布局 SHALL 支持拖拽调整列宽，最小宽度限制：左侧 15%，中间 40%，右侧 20%
 
-### 需求 5：Notebook 首页（类 NotebookLM 的笔记本列表）
+---
 
-**用户故事：** 作为学习者，我希望应用首页像 NotebookLM 一样展示我的"学习笔记本"列表，每个笔记本代表一个学习主题，以便我能快速切换和管理多个学习项目。
+### 需求 3：学习材料面板（左侧，20%）
+
+**用户故事：** 作为学习者，我希望在左侧面板中集中管理所有学习材料，包括上传的文件和搜索到的资源，以便我清楚地知道 AI 的回答基于哪些材料。
 
 #### 验收标准
 
-1. THE UI 首页 SHALL 以卡片网格形式展示所有历史 Notebook，每张卡片显示：标题、来源数量、最后访问时间、学习进度百分比
-2. THE 首页 SHALL 在卡片网格顶部提供醒目的"+ 新建笔记本"按钮
-3. WHEN 用户点击"+ 新建笔记本"时，THE UI SHALL 显示新建对话框，允许用户输入笔记本名称并立即添加第一个 Source
-4. THE 首页卡片 SHALL 支持悬停时显示操作菜单：打开、重命名、删除
-5. IF 用户没有任何 Notebook 时，THEN THE 首页 SHALL 显示空状态引导页，包含三个快速开始选项：上传 PDF、粘贴 GitHub URL、直接提问
-6. THE 首页 SHALL 支持按最近访问时间对 Notebook 卡片进行排序
+1. THE 学习材料面板 SHALL 在顶部提供两个入口：**上传文件**（PDF / GitHub 链接）和**搜索资源**
+2. THE 上传文件入口 SHALL 支持：拖拽上传 PDF 文件、粘贴 GitHub 仓库 URL
+3. WHEN 用户上传 PDF 时，THE 面板 SHALL 显示处理进度（解析中 → 分块中 → 就绪），完成后显示绿色就绪状态
+4. THE 面板 SHALL 为每个已添加材料显示：类型图标（📄 PDF / 🔗 GitHub / 📺 B站 / 🎬 YouTube / 📕 小红书 / 🌐 其他网页）、名称（截断至 20 字符）、就绪状态
+5. WHEN 用户点击某个材料时，THE 面板 SHALL 高亮该材料，并在对话区显示该材料的摘要信息
+6. THE 面板 SHALL 支持移除材料，移除前显示确认对话框
+7. WHEN 面板中没有任何材料时，THE 面板 SHALL 显示引导提示："上传 PDF 或搜索资源，让 AI 基于你的材料回答"
 
-### 需求 6：Audio Overview 的文字替代——自动摘要卡片
+---
 
-**用户故事：** 作为学习者，我希望系统能像 NotebookLM 的 Audio Overview 一样，在我添加来源后自动生成一个"内容速览"卡片，让我快速了解材料的核心内容，以便我决定如何深入学习。
+### 需求 4：资源搜索与结果展示（左侧面板内）
 
-#### 验收标准
-
-1. WHEN 用户成功添加并处理完一个 Source 后，THE UI SHALL 在 Notes_Panel 顶部自动显示该 Source 的"内容速览"卡片
-2. THE 内容速览卡片 SHALL 包含：主题摘要（2-3 句话）、关键词标签（5-8 个）、内容类型标识（论文/教程/代码库/文章）
-3. THE Tutor SHALL 在用户添加 Source 后自动生成内容速览，无需用户主动触发
-4. WHEN 内容速览生成完成时，THE UI SHALL 在 Chat_Area 中同步显示一条系统消息，提示用户可以开始基于该来源提问
-5. IF Source 处理失败，THEN THE UI SHALL 在内容速览卡片位置显示错误状态和重试按钮
-
-### 需求 7：建议问题（Suggested Questions）
-
-**用户故事：** 作为学习者，我希望系统像 NotebookLM 一样在我添加来源后自动推荐几个值得探索的问题，以便我快速进入深度学习状态，不需要自己想问什么。
+**用户故事：** 作为学习者，我希望能在左侧面板内搜索特定平台的学习资源，并看到带质量评分和建议评语的搜索结果列表，以便我选择最优质的资源加入学习材料。
 
 #### 验收标准
 
-1. WHEN 用户添加 Source 并生成内容速览后，THE Tutor SHALL 基于 Source 内容自动生成 3-5 个推荐问题
-2. THE Chat_Area SHALL 在消息列表上方以可点击的"问题芯片"（chip）形式展示推荐问题
-3. WHEN 用户点击某个推荐问题芯片时，THE Chat_Area SHALL 将该问题填入输入框并自动发送
-4. THE 推荐问题 SHALL 覆盖不同难度层次：理解类（"什么是..."）、应用类（"如何..."）、分析类（"为什么..."）
-5. WHEN 用户已经开始对话后，THE Chat_Area SHALL 隐藏推荐问题芯片，避免干扰对话流程
-6. THE 推荐问题 SHALL 在每次添加新 Source 后重新生成，反映最新的 Source 内容
+1. THE 搜索入口 SHALL 允许用户输入搜索关键词，并可选择指定平台（B站、小红书、YouTube、Google，或全平台）
+2. WHEN 用户触发搜索时，THE 搜索结果 SHALL 在左侧面板内直接展开显示，不使用浮窗或新页面
+3. THE 每条搜索结果 SHALL 显示以下信息：
+   - 平台图标（B站/小红书/YouTube/Google 对应图标）
+   - 资源标题
+   - 内容摘要（description 或 content_snippet，截断至 100 字符）
+   - QualityScorer 综合评分（显示为 ⭐ x.x/10 格式，原始 0-1 分值 × 10）
+   - Searcher 建议评语（recommendation_reason 字段）
+   - 可点击的超链接（点击在新标签页打开）
+   - 勾选框（用于选择是否加入学习材料）
+4. WHEN 用户勾选搜索结果并点击"加入学习材料"时，THE 面板 SHALL 将选中资源添加到材料列表
+5. THE 搜索结果列表 SHALL 按 QualityScorer 评分从高到低排序
+6. WHEN 搜索进行中时，THE 面板 SHALL 显示加载状态（每个平台独立显示搜索进度）
+7. THE 搜索结果 SHALL 支持折叠/展开，用户可以收起搜索结果回到材料列表视图
 
-### 需求 8：视觉风格与主题（NotebookLM 美学）
+**搜索结果 ASCII 线框图：**
+
+```
+┌─── 学习材料面板 (20%) ──────────────────┐
+│                                         │
+│  📚 学习材料                            │
+│                                         │
+│  ┌─────────────────────────────────┐    │
+│  │ ➕ 上传文件  │  🔍 搜索资源     │    │
+│  └─────────────────────────────────┘    │
+│                                         │
+│  ── 已添加材料 ──────────────────────   │
+│  📄 transformer_paper.pdf  ✅           │
+│  🔗 langchain/langchain    ✅           │
+│                                         │
+│  ── 搜索结果 (Transformer 教程) ──────  │
+│                                         │
+│  ☑ [B站] Transformer 从零实现          │
+│     "手把手带你实现 Attention 机制..."  │
+│     ⭐ 8.7/10                           │
+│     💡 互动数据优秀，弹幕活跃，适合入门 │
+│     🔗 bilibili.com/video/...          │
+│                                         │
+│  ☑ [YouTube] The Illustrated Transformer│
+│     "Visual explanation of attention..."│
+│     ⭐ 9.2/10                           │
+│     💡 来自知名技术频道，内容深度高     │
+│     🔗 youtube.com/watch?v=...         │
+│                                         │
+│  ☐ [小红书] Transformer 学习笔记       │
+│     "整理了 Attention 的核心公式..."   │
+│     ⭐ 6.1/10                           │
+│     💡 笔记类内容，适合复习参考         │
+│     🔗 xiaohongshu.com/...            │
+│                                         │
+│  [ 加入学习材料 (2 项已选) ]            │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+---
+
+### 需求 5：AI 对话区（中间，50%）
+
+**用户故事：** 作为学习者，我希望 AI 的每条回复都清晰标注引用了哪些来源，支持多轮对话上下文（能理解"它"这种指代词），以便我能深度追溯并持续深入学习。
+
+#### 验收标准
+
+1. THE 对话区 SHALL 在每条 AI 回复下方显示来源引用标记，列出本次回复引用的材料名称和片段
+2. WHEN 用户点击来源引用时，THE 对话区 SHALL 在弹出层中显示原始引用片段的完整内容
+3. THE Tutor SHALL 维护多轮对话历史（最近 6 轮），能够理解指代词（如"它"、"这个"、"上面提到的"）
+4. WHEN AI 正在生成回复时，THE 对话区 SHALL 显示流式输出效果（逐字/逐句出现）
+5. THE 对话区 SHALL 在消息列表顶部提供"建议问题"区域，显示 3-5 个基于当前材料自动生成的推荐问题
+6. WHEN 用户点击推荐问题时，THE 对话区 SHALL 将该问题填入输入框并自动发送
+7. THE 输入框 SHALL 支持多行输入，Shift+Enter 换行，Enter 发送
+8. WHEN 学习材料面板中没有任何材料时，THE 对话区 SHALL 在输入框上方显示提示横幅："添加学习材料后，AI 将基于你的材料回答"
+
+---
+
+### 需求 6：Studio 面板（右侧，30%）
+
+**用户故事：** 作为学习者，我希望右侧 Studio 面板顶部始终显示今天要做的任务，中间提供多种 AI 学习工具，底部分开管理 AI 生成内容和我自己的笔记；作为开发者，我还希望在开发者模式下能在 Studio 面板中切换 LangGraph 模式、查看 Agent 调用链追踪和 LangSmith 状态。
+
+#### Studio 面板布局（从上到下三个区域）
+
+**区域一：今日任务（置顶常驻）**
+**区域二：学习工具卡片网格**
+**区域三：内容库（Tab 切换：AI 生成 / 我的笔记）**
+
+#### 验收标准
+
+**区域一：今日任务**
+
+1. THE Studio 面板 SHALL 在顶部常驻显示"🎯 今日任务"区块，不需要用户点击触发
+2. THE 今日任务区块 SHALL 显示学习计划中当前最近一个未完成 Day 的具体任务列表，包括：要看的视频资源（显示标题和 ⭐ 评分）、要阅读的材料章节、要完成的练习项目。"当前 Day"由用户在学习计划中手动点击"完成 Day N"来推进，不依赖日历日期
+3. THE 每条任务 SHALL 提供勾选框，用户勾选后该任务标记为完成，进度报告自动更新
+4. WHEN 尚未生成学习计划时，THE 今日任务区块 SHALL 显示引导提示："生成学习计划后，今日任务将自动出现"
+5. WHEN 当天所有任务完成时，THE 今日任务区块 SHALL 显示完成状态提示
+
+**区域二：学习工具卡片**
+
+6. THE Studio 面板 SHALL 在今日任务下方以 2 列网格展示以下 6 张学习工具卡片：
+   - 📅 学习计划（Learning Plan）— 侧重规划，生成多天学习路径，每天含主题、推荐资源（带评分）、预计时长
+   - 📊 进度报告（Progress Report）— 侧重监控，可视化整体进度、本周学习时长、掌握程度分布，数据来自 ProgressTracker
+   - 🧪 测验（Quiz）— 侧重检验，基于当前材料生成选择题，答完给出得分和解析
+   - 📖 学习指南（Study Guide）— 侧重理解，提炼材料核心概念和知识框架，适合学习初期快速建立认知
+   - 🃏 闪卡（Flashcards）— 侧重记忆，从材料提取关键概念生成 Q/A 卡片，支持标记"已掌握/需复习"
+   - 📝 学习笔记（Notes）— 侧重沉淀，用户手动记录，支持自命名，可点击"AI 整理"让 Tutor 结构化笔记内容
+7. WHEN 用户点击学习工具卡片时，THE Studio 面板 SHALL 调用对应后端 API 生成内容并在面板内展示
+8. WHEN 用户首次添加学习材料时，THE Studio 面板 SHALL 自动触发生成"学习指南"，无需用户主动点击
+9. THE 学习计划 SHALL 以交互式列表展示每日学习任务，支持"标记完成"操作，完成后同步更新今日任务区块和进度报告
+10. WHEN 开发者模式启用时，THE Studio 面板 SHALL 在学习工具卡片区下方额外显示开发者工具卡片：
+    - 🔀 LangGraph 模式（切换开关，启用后使用 `src/agents/orchestrator_langgraph.py`）
+    - � Agent Trace（查看 Agent 调用链：工具调用、耗时、Token 消耗、StateGraph 节点流转）
+    - 🔗 LangSmith（显示连接状态 ✅/❌，点击跳转到对应 trace 链接）
+11. THE 开发者工具卡片 SHALL 仅在开发者模式下可见，不影响普通用户的使用体验
+
+**区域三：内容库**
+
+12. THE Studio 面板底部 SHALL 提供内容库区域，通过 Tab 切换两个子区域：
+    - **AI 生成** Tab：展示所有 AI 生成的内容（学习计划、学习指南、闪卡、测验、进度报告），按生成时间倒序排列，每条显示类型图标、名称、生成时间、"导出为 Markdown"按钮
+    - **我的笔记** Tab：展示用户创建的所有笔记，按最后编辑时间倒序排列，每条显示笔记名称、最后编辑时间、"编辑"按钮；底部固定显示"+ 新建笔记"按钮
+13. WHEN 用户点击"+ 新建笔记"时，THE 面板 SHALL 弹出命名输入框，用户输入名称后进入笔记编辑状态
+14. THE 笔记编辑器 SHALL 支持基础 Markdown 格式，并提供"AI 整理"按钮，点击后调用 Tutor 对笔记内容进行结构化整理
+15. THE Studio 面板底部 SHALL 始终显示 LangSmith 连接状态指示器（✅ 已连接 / ❌ 未连接）
+
+**Studio 面板 ASCII 线框图（完整布局）：**
+
+```
+┌─── Studio 面板 (30%) ───────────────────┐
+│  ✨ Studio                              │
+│                                         │
+│  ── 🎯 今日任务 ─────────────────────   │
+│  ☑ 看: Transformer从零实现 ⭐9.2        │
+│  ☐ 读: transformer_paper.pdf 第3章      │
+│  ☐ 完成: 5道闪卡复习                   │
+│                                         │
+│  ── 学习工具 ────────────────────────   │
+│  ┌──────────┐  ┌──────────┐            │
+│  │ 📅 学习  │  │ 📊 进度  │            │
+│  │   计划   │  │   报告   │            │
+│  └──────────┘  └──────────┘            │
+│  ┌──────────┐  ┌──────────┐            │
+│  │ 🧪 测验  │  │ 📖 学习  │            │
+│  │          │  │   指南   │            │
+│  └──────────┘  └──────────┘            │
+│  ┌──────────┐  ┌──────────┐            │
+│  │ 🃏 闪卡  │  │ 📝 笔记  │            │
+│  │          │  │          │            │
+│  └──────────┘  └──────────┘            │
+│                                         │
+│  ── 开发者工具（开发者模式下显示）────   │
+│  ┌──────────┐  ┌──────────┐            │
+│  │ 🔀 Lang  │  │ 🔍 Agent │            │
+│  │  Graph   │  │  Trace   │            │
+│  │  ● ON    │  │          │            │
+│  └──────────┘  └──────────┘            │
+│  ┌──────────┐                          │
+│  │ 🔗 Lang  │                          │
+│  │  Smith ✅│                          │
+│  └──────────┘                          │
+│                                         │
+│  [ AI 生成 ]  [ 我的笔记 ]             │
+│  ─────────────────────────────────────  │
+│  📅 学习计划  03-03  [导出]             │
+│  📖 学习指南  03-01  [导出]             │
+│  🃏 闪卡      03-01  [导出]             │
+│                                         │
+│  ─────────────────────────────────────  │
+│  🔗 LangSmith ✅                        │
+└─────────────────────────────────────────┘
+```
+
+---
+
+### 需求 7：首页——学习规划列表（类 NotebookLM 笔记本列表）
+
+**用户故事：** 作为学习者，我希望应用首页像 NotebookLM 一样展示我的"学习规划"列表，每个规划代表一个学习主题，并且能快速新建规划（通过上传 PDF、粘贴链接或直接描述主题），以便我能快速切换和管理多个学习项目。
+
+#### 验收标准
+
+1. THE 首页 SHALL 以卡片网格形式展示所有历史学习规划，每张卡片显示：封面图/主题色块、标题、来源数量（"X 个来源"）、最后访问时间
+2. THE 首页 SHALL 在卡片列表顶部提供**精选学习规划**区域，展示系统推荐的热门学习主题，样式参考 NotebookLM 精选笔记本的横向滚动卡片
+3. THE 首页 SHALL 提供醒目的 **"+ 新建"** 按钮（右上角），点击后展示三种创建方式：
+   - 📄 上传 PDF（拖拽或点击选择文件）
+   - 🔗 粘贴链接（GitHub URL / 网页链接）
+   - 💬 直接开始（输入学习主题，如"我想学 Transformer"）
+4. THE 首页卡片 SHALL 支持悬停时显示操作菜单（三点图标 ⋮）：打开、重命名、删除
+5. IF 用户没有任何学习规划时，THEN THE 首页 SHALL 显示空状态引导页，直接展示三种创建方式
+6. THE 首页 SHALL 支持视图切换：网格视图（默认）和列表视图
+7. THE 首页 SHALL 支持按最近访问时间排序，顶部显示"全部"和"精选笔记本"两个筛选 Tab
+
+**首页 ASCII 线框图：**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ⚛️ XLearning                                    ⚙️ 设置  ⋮⋮⋮  👤      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  全部  精选笔记本                    ✓ 网格  ≡ 列表  最近 ▾  [+ 新建]  │
+│                                                                         │
+│  ── 精选学习规划 ──────────────────────────────────────────── 查看全部 ▶│
+│                                                                         │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │
+│  │ [封面色块]   │ │ [封面色块]   │ │ [封面色块]   │ │ [封面色块]   │  │
+│  │              │ │              │ │              │ │              │  │
+│  │ Transformer  │ │ Python 异步  │ │ LangChain    │ │ 强化学习     │  │
+│  │ 架构精讲     │ │ 编程实战     │ │ 从入门到精通 │ │ 基础         │  │
+│  │              │ │              │ │              │ │              │  │
+│  │ 2026-03-01   │ │ 2026-02-28   │ │ 2026-02-20   │ │ 2026-02-15   │  │
+│  │ 16 个来源  🌐│ │ 8 个来源   🌐│ │ 13 个来源  🌐│ │ 5 个来源   🌐│  │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │
+│                                                                         │
+│  ── 最近打开的学习规划 ──────────────────────────────────────────────   │
+│                                                                         │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                   │
+│  │      +       │ │ [书本图标]   │ │ [书本图标]   │                   │
+│  │              │ │              │ │              │                   │
+│  │  新建学习    │ │ The Fundamen │ │ Untitled     │                   │
+│  │  规划        │ │ tals and ... │ │ notebook     │                   │
+│  │              │ │              │ │              │                   │
+│  │              │ │ 2026-02-28   │ │ 2026-03-03   │                   │
+│  │              │ │ 1 个来源     │ │ 0 个来源     │                   │
+│  └──────────────┘ └──────────────┘ └──────────────┘                   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**新建规划弹窗 ASCII 线框图：**
+
+```
+┌─────────────────────────────────────────────────────┐
+│  新建学习规划                                    ✕  │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  规划名称（可选）                                   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ 例：Transformer 架构学习                    │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                     │
+│  选择开始方式：                                     │
+│                                                     │
+│  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │
+│  │  📄 上传    │  │  🔗 粘贴    │  │ 💬 直接    │  │
+│  │  PDF 文件   │  │  链接       │  │ 开始       │  │
+│  │             │  │  (GitHub/   │  │ (描述主题) │  │
+│  │  拖拽或点击 │  │   网页)     │  │            │  │
+│  └─────────────┘  └─────────────┘  └────────────┘  │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ 我想学习 Transformer 架构，从注意力机制开始  │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                     │
+│                          [ 取消 ]  [ 创建规划 →]   │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### 需求 8：视觉风格（NotebookLM 美学）
 
 **用户故事：** 作为学习者，我希望界面视觉风格参考 NotebookLM 的简洁、专注、学术感设计，以便我在使用时感受到专业的学习氛围。
 
 #### 验收标准
 
-1. THE UI SHALL 采用以白色/浅灰为主的背景色系，主强调色使用深蓝（`#1A73E8`）或保留现有橙色（`#F97316`），避免过多彩色干扰
-2. THE UI SHALL 使用无衬线字体，正文字号不小于 14px，确保长时间阅读的舒适度
-3. THE Source_Panel 和 Notes_Panel SHALL 使用轻微的阴影和圆角卡片设计，与 Chat_Area 形成视觉层次区分
-4. THE UI SHALL 提供深色模式（Dark Mode）切换选项，深色模式下背景色使用 `#1C1C1E`，文字使用 `#F5F5F7`
-5. WHEN AI 正在处理请求时，THE UI SHALL 显示优雅的加载动画（脉冲点或进度条），而非简单的"请稍候"文字
-6. THE UI 的所有交互元素（按钮、卡片、输入框）SHALL 具有一致的圆角半径（8px）和过渡动画（150ms ease）
+1. THE UI SHALL 采用以白色/浅灰为主的背景色系，主强调色使用深蓝（`#1A73E8`）或橙色（`#F97316`）
+2. THE UI SHALL 使用无衬线字体，正文字号不小于 14px
+3. THE 学习材料面板和 Studio 面板 SHALL 使用轻微阴影和圆角卡片设计，与对话区形成视觉层次区分
+4. THE UI SHALL 提供深色模式切换，深色模式背景色 `#1C1C1E`，文字 `#F5F5F7`
+5. WHEN AI 正在处理请求时，THE UI SHALL 显示优雅的加载动画（脉冲点或进度条）
+6. THE UI 的所有交互元素 SHALL 具有一致的圆角半径（8px）和过渡动画（150ms ease）
+
+---
 
 ### 需求 9：键盘快捷键与无障碍访问
 
@@ -140,19 +351,7 @@
 
 #### 验收标准
 
-1. THE UI SHALL 支持以下键盘快捷键：`Ctrl/Cmd + K` 聚焦到输入框、`Ctrl/Cmd + N` 新建 Notebook、`Escape` 关闭弹出层
+1. THE UI SHALL 支持以下键盘快捷键：`Ctrl/Cmd + K` 聚焦到输入框、`Ctrl/Cmd + N` 新建规划、`Escape` 关闭弹出层
 2. THE UI 的所有交互元素 SHALL 具有可见的键盘焦点指示器（focus ring）
-3. THE UI 的所有图标按钮 SHALL 提供 `aria-label` 属性，确保屏幕阅读器可以正确描述按钮功能
-4. THE Source_Panel 中的 Source 列表 SHALL 支持键盘导航（上下箭头键切换，Enter 键选中）
-
-### 需求 10：响应式布局与 Streamlit 兼容性
-
-**用户故事：** 作为开发者，我希望新的 NotebookLM 风格布局能在现有 Streamlit 框架内实现，以便不需要迁移到其他前端框架。
-
-#### 验收标准
-
-1. THE UI SHALL 在 Streamlit 框架内通过 `st.columns`、`st.markdown(unsafe_allow_html=True)` 和自定义 CSS 实现三区域布局
-2. THE UI 的自定义 CSS SHALL 通过 `st.markdown` 注入，不依赖外部 CSS 文件，确保部署简单性
-3. WHEN Streamlit 版本升级时，THE UI 的核心布局 SHALL 不依赖已废弃的 API（如 `st.experimental_rerun` 应迁移至 `st.rerun`）
-4. THE UI 的所有自定义 HTML 组件 SHALL 通过 `streamlit.components.v1.html` 渲染，避免 XSS 风险
-5. THE UI SHALL 在 Streamlit Cloud 和本地环境中均能正常运行，不依赖本地文件系统以外的外部服务
+3. THE UI 的所有图标按钮 SHALL 提供 `aria-label` 属性
+4. THE 学习材料列表 SHALL 支持键盘导航（上下箭头键切换，Enter 键选中）

@@ -145,3 +145,10 @@ scripts/.xhs_cookies.json
 scripts/debug_screenshots/
 scripts/xhs_search_debug.png
 scripts/*_results.json
+
+# ===========================================
+# Frontend (React)
+# ===========================================
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
