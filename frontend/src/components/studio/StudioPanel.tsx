@@ -1,226 +1,202 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { TodayTasks } from './TodayTasks'
-import { ToolGrid } from './ToolGrid'
-import { ContentLibrary } from './ContentLibrary'
+import { ContentViewer } from './ContentViewer'
+import { NoteEditor } from './NoteEditor'
 import { useStudioStore } from '../../store/studioStore'
 import { useSourceStore } from '../../store/sourceStore'
-import type { StudioTool, GeneratedContent } from '../../types'
+import type { GeneratedContent, Note } from '../../types'
 
-const STUDIO_TOOLS: StudioTool[] = [
-  { type: 'learning-plan', icon: '📅', label: '学习计划' },
-  { type: 'progress-report', icon: '📊', label: '进度报告' },
-  { type: 'quiz', icon: '🧪', label: '测验' },
-  { type: 'study-guide', icon: '📖', label: '学习指南' },
-  { type: 'flashcards', icon: '🃏', label: '闪卡' },
-]
+/** NotebookLM 风格工具定义 */
+const TOOLS = [
+  { type: 'study-guide', icon: '📖', label: '学习指南', color: 'bg-blue-50 border-blue-200', iconBg: 'text-blue-600' },
+  { type: 'flashcards', icon: '🃏', label: '闪卡', color: 'bg-purple-50 border-purple-200', iconBg: 'text-purple-600' },
+  { type: 'quiz', icon: '🧪', label: '测验', color: 'bg-green-50 border-green-200', iconBg: 'text-green-600' },
+  { type: 'learning-plan', icon: '📅', label: '学习计划', color: 'bg-orange-50 border-orange-200', iconBg: 'text-orange-600' },
+  { type: 'progress-report', icon: '📊', label: '进度报告', color: 'bg-pink-50 border-pink-200', iconBg: 'text-pink-600' },
+] as const
 
-// 9.1: 开发者工具卡片（仅 devMode 下显示）
-const DEV_TOOLS: StudioTool[] = [
-  { type: 'learning-plan', icon: '🔀', label: 'LangGraph' },
-  { type: 'progress-report', icon: '🔍', label: 'Agent Trace' },
-]
-
-interface AgentTrace {
-  tool: string
-  durationMs: number
-  tokens: number
-  timestamp: string
+const TYPE_ICONS: Record<string, string> = {
+  'learning-plan': '📅', 'study-guide': '📖', 'flashcards': '🃏',
+  'quiz': '🧪', 'progress-report': '📊',
 }
 
-interface StudioPanelProps {
-  planId?: string
-}
+interface StudioPanelProps { planId?: string }
 
 export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '' }) => {
   const {
-    currentDay, toggleTask, completeDay,
-    addGeneratedContent, generatedContents,
-    devMode, setDevMode,
-    langGraphEnabled, setLangGraphEnabled,
+    generatedContents, notes, addGeneratedContent, addNote, updateNote, deleteNote,
+    devMode, setDevMode, langGraphEnabled, setLangGraphEnabled,
   } = useStudioStore()
   const { materials } = useSourceStore()
   const [loadingTool, setLoadingTool] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'ai-generated' | 'my-notes'>('ai-generated')
-  const prevMaterialCount = useRef(materials.length)
+  const [viewingContent, setViewingContent] = useState<GeneratedContent | null>(null)
+  const [editingNote, setEditingNote] = useState<Note | null>(null)
+  const [showNewNote, setShowNewNote] = useState(false)
+  const [menuId, setMenuId] = useState<string | null>(null)
+  const prevMatCount = useRef(materials.length)
 
-  // 9.3: Agent Trace 状态
-  const [traces, setTraces] = useState<AgentTrace[]>([])
-  const [showTrace, setShowTrace] = useState(false)
-
-  // 9.4: LangSmith 状态
-  const [langsmithOk, setLangsmithOk] = useState<boolean | null>(null)
-  useEffect(() => {
-    fetch('/api/health').then(r => r.ok ? setLangsmithOk(true) : setLangsmithOk(false)).catch(() => setLangsmithOk(false))
-  }, [])
-
-  // 8.3: 完成 Day 时同步后端（幂等）
-  const handleCompleteDay = async (dayNumber: number) => {
-    completeDay(dayNumber)
-    try {
-      await fetch(`/api/plan/day/${dayNumber}/complete?plan_id=${planId}`, { method: 'PUT' })
-    } catch { /* 幂等 */ }
-  }
-
-  // 8.4: 工具卡片点击触发内容生成
-  const handleToolClick = async (tool: StudioTool) => {
+  // 工具卡片点击
+  const handleToolClick = async (type: string, label: string) => {
     if (loadingTool) return
-    setLoadingTool(tool.type)
-    setActiveTab('ai-generated')
-    const t0 = Date.now()
+    setLoadingTool(type)
     try {
-      const res = await fetch(`/api/studio/${tool.type}?plan_id=${encodeURIComponent(planId)}`)
+      const res = await fetch(`/api/studio/${type}?plan_id=${encodeURIComponent(planId)}`)
       if (res.ok) {
         const data = await res.json()
-        const content: GeneratedContent = {
-          id: `${tool.type}-${Date.now()}`,
-          type: tool.type as GeneratedContent['type'],
-          title: data.title,
+        addGeneratedContent({
+          id: `${type}-${Date.now()}`,
+          type: type as GeneratedContent['type'],
+          title: data.title || label,
           content: data.content,
           createdAt: new Date().toISOString(),
-        }
-        addGeneratedContent(content)
-        // 9.3: 记录 trace
-        if (devMode) {
-          setTraces((prev: AgentTrace[]) => [{
-            tool: tool.label,
-            durationMs: Date.now() - t0,
-            tokens: Math.round(data.content.length / 4),
-            timestamp: new Date().toLocaleTimeString('zh-CN'),
-          }, ...prev].slice(0, 20))
-        }
+        })
       }
     } catch { /* 静默 */ }
     finally { setLoadingTool(null) }
   }
 
-  // 8.5: 首次添加材料自动触发学习指南
+  // 首次添加材料自动生成学习指南
   useEffect(() => {
-    const prev = prevMaterialCount.current
-    prevMaterialCount.current = materials.length
+    const prev = prevMatCount.current
+    prevMatCount.current = materials.length
     if (prev === 0 && materials.length === 1) {
-      const alreadyHasGuide = generatedContents.some(c => c.type === 'study-guide')
-      if (!alreadyHasGuide) {
-        handleToolClick({ type: 'study-guide', icon: '📖', label: '学习指南' })
+      if (!generatedContents.some(c => c.type === 'study-guide')) {
+        handleToolClick('study-guide', '学习指南')
       }
     }
   }, [materials.length])
 
-  // 9.2: LangGraph 切换
-  const handleLangGraphToggle = () => {
-    setLangGraphEnabled(!langGraphEnabled)
+  const handleSaveNote = (data: { id?: string; title: string; content: string }) => {
+    if (data.id) {
+      updateNote(data.id, { title: data.title, content: data.content, updatedAt: new Date().toISOString() })
+    } else {
+      addNote({ id: 'note-' + Date.now(), title: data.title, content: data.content, updatedAt: new Date().toISOString() })
+    }
+    setEditingNote(null); setShowNewNote(false)
   }
 
+  const handleDeleteContent = (id: string) => {
+    useStudioStore.setState((s) => ({
+      generatedContents: s.generatedContents.filter(c => c.id !== id)
+    }))
+    setMenuId(null)
+  }
+
+  const handleDeleteNote = (id: string) => {
+    deleteNote(id)
+    setMenuId(null)
+  }
+
+  const handleExport = (c: GeneratedContent) => {
+    const blob = new Blob([c.content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    Object.assign(document.createElement('a'), { href: url, download: c.title + '.md' }).click()
+    URL.revokeObjectURL(url)
+    setMenuId(null)
+  }
+
+  const fmt = (iso: string) => {
+    const d = new Date(iso)
+    const now = new Date()
+    const diff = now.getTime() - d.getTime()
+    if (diff < 60000) return '刚刚'
+    if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前'
+    if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前'
+    return Math.floor(diff / 86400000) + ' 天前'
+  }
+
+  // 合并内容列表：AI 生成 + 笔记，按时间倒序
+  const allItems = [
+    ...generatedContents.map(c => ({ ...c, kind: 'generated' as const })),
+    ...notes.map(n => ({ ...n, kind: 'note' as const, type: 'note' as const, content: n.content, createdAt: n.updatedAt })),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center px-4 h-12 flex-shrink-0 border-b border-[#DADCE0] dark:border-dark-border">
-        <span className="text-sm font-semibold text-[#202124] dark:text-dark-text flex-1">
-          ✨ Studio
-        </span>
-        {/* 9.1: Dev Mode 开关 */}
-        <button
-          onClick={() => setDevMode(!devMode)}
-          aria-label={devMode ? '关闭开发者模式' : '开启开发者模式'}
-          title={devMode ? '关闭开发者模式' : '开启开发者模式'}
-          className={`text-xs px-2 py-0.5 rounded-full transition-all duration-150 ${
-            devMode
-              ? 'bg-[#E8F0FE] text-[#1A73E8] border border-[#1A73E8]'
-              : 'text-[#9AA0A6] hover:text-[#5F6368]'
-          }`}
-        >
-          DEV
+    <div className="flex flex-col h-full overflow-hidden bg-white dark:bg-dark-bg">
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between px-4 h-12 flex-shrink-0 border-b border-[#DADCE0] dark:border-dark-border">
+        <span className="text-sm font-semibold text-[#202124] dark:text-dark-text">Studio</span>
+        <button onClick={() => setDevMode(!devMode)}
+          className={`text-xs px-2 py-0.5 rounded-full transition-all ${devMode ? 'bg-blue-50 text-blue-600 border border-blue-300' : 'text-gray-400 hover:text-gray-600'}`}
+          aria-label="开发者模式">DEV</button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {/* 工具卡片网格 — NotebookLM 风格 */}
+        <div className="grid grid-cols-3 gap-2 p-3">
+          {TOOLS.map(t => (
+            <button key={t.type} onClick={() => handleToolClick(t.type, t.label)}
+              disabled={!!loadingTool}
+              className={`relative flex flex-col items-start p-3 rounded-xl border ${t.color} hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer min-h-[72px]`}>
+              <span className={`text-lg ${t.iconBg}`}>{t.icon}</span>
+              <span className="text-xs font-medium text-gray-700 mt-1">{t.label}</span>
+              {loadingTool === t.type && (
+                <div className="absolute inset-0 bg-white/60 rounded-xl flex items-center justify-center">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* 内容列表 */}
+        <div className="px-3 pb-3">
+          {allItems.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">点击上方工具卡片生成内容</p>
+          ) : (
+            <ul className="flex flex-col">
+              {allItems.map(item => (
+                <li key={item.id}
+                  className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50 dark:hover:bg-dark-surface cursor-pointer transition-colors group relative"
+                  onClick={() => item.kind === 'generated' ? setViewingContent(item as GeneratedContent) : setEditingNote(item as unknown as Note)}>
+                  {/* 图标 */}
+                  <span className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-base flex-shrink-0">
+                    {item.kind === 'note' ? '📝' : (TYPE_ICONS[item.type] || '📄')}
+                  </span>
+                  {/* 标题 + 元信息 */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 dark:text-dark-text truncate">{item.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {item.kind === 'note' ? '笔记' : item.type === 'learning-plan' ? '学习计划' : item.type === 'study-guide' ? '学习指南' : item.type === 'flashcards' ? '闪卡' : item.type === 'quiz' ? '测验' : '报告'}
+                      {' · '}{fmt(item.createdAt)}
+                    </p>
+                  </div>
+                  {/* 菜单按钮 */}
+                  <button onClick={(e) => { e.stopPropagation(); setMenuId(menuId === item.id ? null : item.id) }}
+                    className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 transition-all text-gray-400"
+                    aria-label="更多操作">⋮</button>
+                  {/* 下拉菜单 */}
+                  {menuId === item.id && (
+                    <div className="absolute right-2 top-12 z-20 bg-white dark:bg-dark-surface border border-gray-200 rounded-xl shadow-lg py-1 min-w-[120px]"
+                      onClick={e => e.stopPropagation()}>
+                      {item.kind === 'generated' && (
+                        <button onClick={() => handleExport(item as GeneratedContent)}
+                          className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">导出 .md</button>
+                      )}
+                      <button onClick={() => item.kind === 'generated' ? handleDeleteContent(item.id) : handleDeleteNote(item.id)}
+                        className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50">删除</button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* 底部：添加笔记按钮 */}
+      <div className="flex-shrink-0 px-4 py-3 border-t border-gray-200 dark:border-dark-border">
+        <button onClick={() => setShowNewNote(true)}
+          className="w-full flex items-center justify-center gap-2 h-10 rounded-full border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-all">
+          📝 添加笔记
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col">
-        <div className="px-3 pt-3">
-          <TodayTasks
-            currentDay={currentDay}
-            onTaskToggle={(i) => currentDay && toggleTask(currentDay.dayNumber, i)}
-            onCompleteDay={handleCompleteDay}
-          />
-        </div>
-
-        <div className="px-3 pt-3">
-          <p className="text-xs font-medium text-[#5F6368] uppercase tracking-wide mb-2">
-            学习工具
-          </p>
-          <ToolGrid tools={STUDIO_TOOLS} onToolClick={handleToolClick} loadingTool={loadingTool ?? undefined} />
-        </div>
-
-        {/* 9.1: 开发者工具区块 */}
-        {devMode && (
-          <div className="px-3 pt-3">
-            <p className="text-xs font-medium text-[#5F6368] uppercase tracking-wide mb-2">
-              开发者工具
-            </p>
-            <ToolGrid tools={DEV_TOOLS} onToolClick={() => {}} />
-
-            {/* 9.2: LangGraph 切换 */}
-            <div className="mt-2 flex items-center justify-between px-2 py-2 bg-white rounded-xl border border-[#DADCE0] shadow-sm">
-              <span className="text-xs text-[#202124] flex items-center gap-1.5">
-                🔀 LangGraph 模式
-              </span>
-              <button
-                onClick={handleLangGraphToggle}
-                aria-label={langGraphEnabled ? '关闭 LangGraph' : '开启 LangGraph'}
-                className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
-                  langGraphEnabled ? 'bg-[#1A73E8]' : 'bg-[#DADCE0]'
-                }`}
-              >
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${
-                  langGraphEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                }`} />
-              </button>
-            </div>
-
-            {/* 9.3: Agent Trace 卡片 */}
-            <div className="mt-2 bg-white rounded-xl border border-[#DADCE0] shadow-sm overflow-hidden">
-              <button
-                onClick={() => setShowTrace((v: boolean) => !v)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs text-[#202124] hover:bg-[#F1F3F4] transition-colors duration-150"
-              >
-                <span className="flex items-center gap-1.5">🔍 Agent Trace</span>
-                <span className="text-[#9AA0A6]">{showTrace ? '▲' : '▼'}</span>
-              </button>
-              {showTrace && (
-                <div className="border-t border-[#DADCE0] max-h-40 overflow-y-auto">
-                  {traces.length === 0 ? (
-                    <p className="text-xs text-[#9AA0A6] text-center py-3">点击工具卡片后显示 trace</p>
-                  ) : (
-                    <ul className="divide-y divide-[#F1F3F4]">
-                      {traces.map((t: AgentTrace, i: number) => (
-                        <li key={i} className="px-3 py-1.5 text-xs text-[#5F6368]">
-                          <span className="font-medium text-[#202124]">{t.tool}</span>
-                          <span className="ml-2">{t.durationMs}ms</span>
-                          <span className="ml-2">~{t.tokens} tokens</span>
-                          <span className="ml-2 text-[#9AA0A6]">{t.timestamp}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="flex-1 px-0 pt-3 min-h-0">
-          <ContentLibrary planId={planId} activeTab={activeTab} onTabChange={setActiveTab} />
-        </div>
-      </div>
-
-      {/* 9.4: 底部状态栏 — LangSmith 指示器 */}
-      <div className="h-8 border-t border-[#DADCE0] dark:border-dark-border px-3 flex items-center flex-shrink-0 gap-3">
-        <span className="text-xs text-[#5F6368] flex items-center gap-1">
-          <span className={`w-1.5 h-1.5 rounded-full inline-block ${
-            langsmithOk === null ? 'bg-yellow-400' : langsmithOk ? 'bg-green-500' : 'bg-red-400'
-          }`} />
-          LangSmith {langsmithOk === null ? '…' : langsmithOk ? '✅' : '❌'}
-        </span>
-        {devMode && langGraphEnabled && (
-          <span className="text-xs text-[#1A73E8] font-medium">LangGraph ON</span>
-        )}
-      </div>
+      {/* 弹窗 */}
+      {viewingContent && <ContentViewer content={viewingContent} onClose={() => setViewingContent(null)} />}
+      {(editingNote || showNewNote) && (
+        <NoteEditor note={editingNote || undefined} onSave={handleSaveNote}
+          onClose={() => { setEditingNote(null); setShowNewNote(false) }} planId={planId} />
+      )}
     </div>
   )
 }

@@ -9,6 +9,7 @@ import { useKeyboard } from '../hooks/useKeyboard'
 import { useChatStore } from '../store/chatStore'
 import { useSourceStore } from '../store/sourceStore'
 import { usePlanStore } from '../store/planStore'
+import { useStudioStore } from '../store/studioStore'
 import type { ChatMessage, Material } from '../types'
 
 const WorkspacePage: React.FC = () => {
@@ -35,6 +36,8 @@ const WorkspacePage: React.FC = () => {
   // 12.1: 页面加载时从后端恢复会话状态
   useEffect(() => {
     if (!planId) { setIsRestoring(false); return }
+    // 设置 studioStore 的 activePlanId
+    useStudioStore.getState().setActivePlan(planId)
     fetch(`/api/session/${planId}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
