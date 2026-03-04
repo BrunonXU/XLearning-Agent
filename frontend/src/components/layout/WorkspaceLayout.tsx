@@ -1,22 +1,43 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 
 interface WorkspaceLayoutProps {
   left: React.ReactNode
   center: React.ReactNode
   right: React.ReactNode
   topNav: React.ReactNode
+  /** 阅读模式：左侧面板自动扩宽，拖拽有上下限 */
+  isReading?: boolean
 }
 
 const MIN_LEFT = 15
-const MIN_CENTER = 35
+const MAX_LEFT_NORMAL = 35
+const MIN_LEFT_READING = 28
+const MAX_LEFT_READING = 45
+const READING_LEFT = 35
+const MIN_CENTER = 30
 const MIN_RIGHT = 18
 
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
-  left, center, right, topNav,
+  left, center, right, topNav, isReading = false,
 }) => {
   const [leftPct, setLeftPct] = useState(22)
   const [rightPct, setRightPct] = useState(28)
+  const prevReadingRef = useRef(isReading)
+  const savedLeftRef = useRef(22)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // 进入/退出阅读模式时自动调整左侧宽度
+  useEffect(() => {
+    if (isReading && !prevReadingRef.current) {
+      // 进入阅读模式：保存当前宽度，扩宽到 READING_LEFT
+      savedLeftRef.current = leftPct
+      setLeftPct(READING_LEFT)
+    } else if (!isReading && prevReadingRef.current) {
+      // 退出阅读模式：恢复之前的宽度
+      setLeftPct(savedLeftRef.current)
+    }
+    prevReadingRef.current = isReading
+  }, [isReading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const centerPct = 100 - leftPct - rightPct
 
@@ -24,11 +45,13 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     e.preventDefault()
     const startX = e.clientX
     const startLeft = leftPct
+    const minL = isReading ? MIN_LEFT_READING : MIN_LEFT
+    const maxL = isReading ? MAX_LEFT_READING : MAX_LEFT_NORMAL
     const onMove = (ev: MouseEvent) => {
       if (!containerRef.current) return
       const totalW = containerRef.current.offsetWidth
       const delta = ((ev.clientX - startX) / totalW) * 100
-      const newLeft = Math.max(MIN_LEFT, startLeft + delta)
+      const newLeft = Math.min(maxL, Math.max(minL, startLeft + delta))
       if (100 - newLeft - rightPct >= MIN_CENTER) setLeftPct(newLeft)
     }
     const onUp = () => {
@@ -41,7 +64,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [leftPct, rightPct])
+  }, [leftPct, rightPct, isReading])
 
   const startDragRight = useCallback((e: React.MouseEvent) => {
     e.preventDefault()

@@ -23,6 +23,7 @@ const WorkspacePage: React.FC = () => {
 
   const { plans } = usePlanStore()
   const planTitle = plans.find(p => p.id === planId)?.title ?? '学习规划'
+  const [isReading, setIsReading] = useState(false)
 
   const toggleDark = () => {
     setIsDark(d => {
@@ -104,6 +105,7 @@ const WorkspacePage: React.FC = () => {
 
   return (
     <WorkspaceLayout
+      isReading={isReading}
       topNav={
         <TopNav
           planTitle={planTitle}
@@ -114,7 +116,7 @@ const WorkspacePage: React.FC = () => {
           isDark={isDark}
         />
       }
-      left={<SourcePanel planId={planId} />}
+      left={<SourcePanel planId={planId} onReadingChange={setIsReading} />}
       center={<ChatArea planId={planId} />}
       right={<StudioPanel planId={planId} />}
     />

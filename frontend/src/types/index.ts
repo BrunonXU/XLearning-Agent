@@ -19,6 +19,10 @@ export interface SearchResult {
   description: string;    // 截断至 100 字符显示
   qualityScore: number;   // 0-1，显示时 ×10
   recommendationReason: string;
+  contentSummary?: string;              // AI 内容摘要
+  commentSummary?: string;              // 评论结论摘要
+  engagementMetrics?: Record<string, any>;  // 互动指标
+  imageUrls?: string[];                 // 图片 URL 列表
 }
 
 export interface ChatMessage {
@@ -86,3 +90,14 @@ export interface StudioTool {
 export type LibraryTab = 'ai-generated' | 'my-notes';
 
 export type PlatformSearchStatus = 'idle' | 'searching' | 'done' | 'timeout';
+
+export interface SearchHistoryEntry {
+  id: string;
+  query: string;
+  platforms: PlatformType[];
+  results: SearchResult[];
+  resultCount: number;
+  searchedAt: string;     // ISO 8601
+}
+
+export type SearchStage = 'idle' | 'searching' | 'filtering' | 'extracting' | 'evaluating' | 'done' | 'error';

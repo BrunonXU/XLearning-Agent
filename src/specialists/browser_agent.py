@@ -93,14 +93,11 @@ class BrowserAgent:
     async def launch(self, config: PlatformConfig) -> None:
         """启动浏览器实例（带反检测配置），如需登录则加载 Cookie。
 
-        - 有 Cookie 时最小化运行，用户不会被打扰
-        - 没有 Cookie 时弹出浏览器让用户手动登录（最多等 3 分钟）
-        - 有 Cookie 但验证失效时，自动删除旧 Cookie 并重新弹出登录
+        - 有 Cookie 且有效时最小化运行，用户不会被打扰
+        - 没有 Cookie 或 Cookie 失效时弹出浏览器让用户手动登录（最多等 3 分钟）
         """
         try:
             from playwright.async_api import async_playwright
-
-            self._playwright = await async_playwright().start()
 
             # 判断是否有 cookie 文件
             has_cookie_file = False
@@ -109,10 +106,12 @@ class BrowserAgent:
                 has_cookie_file = cookie_path.exists()
 
             # 有 cookie 就最小化，没有就正常显示让用户登录
+            headless_mode = has_cookie_file  # 有 cookie 先最小化尝试
             launch_args = ["--disable-blink-features=AutomationControlled"]
-            if has_cookie_file:
+            if headless_mode:
                 launch_args.append("--start-minimized")
 
+            self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
                 headless=False,
                 args=launch_args,
@@ -133,6 +132,8 @@ class BrowserAgent:
             # 加载 Cookie 并验证
             if config.requires_login and config.cookie_file:
                 cookie_path = Path(config.cookie_file)
+                need_login = True
+
                 if cookie_path.exists():
                     cookies = json.loads(cookie_path.read_text(encoding="utf-8"))
                     await self._context.add_cookies(cookies)
@@ -140,62 +141,101 @@ class BrowserAgent:
 
                     # 验证 cookie 是否有效
                     is_valid = await self._verify_cookie_valid(config)
-                    if not is_valid:
-                        logger.warning(f"Cookie 已失效 ({config.name})，删除旧 Cookie 并重新登录")
+                    if is_valid:
+                        need_login = False
+                    else:
+                        logger.warning(f"Cookie 已失效 ({config.name})，需要重新登录")
                         cookie_path.unlink(missing_ok=True)
-                        # 关闭当前最小化的浏览器，重新以可见模式启动
+                        # 清除浏览器中的旧 cookie
+                        await self._context.clear_cookies()
+
+                if need_login:
+                    # 如果当前是最小化模式，需要关闭重新以可见模式启动
+                    if headless_mode:
                         await self._browser.close()
-                        await self._playwright.stop()
-                        self._browser = None
-                        self._context = None
-                        self._playwright = None
-                        # 递归调用，这次没有 cookie 文件了，会走登录流程
-                        return await self.launch(config)
-                else:
-                    # 没有 cookie 文件，弹出浏览器让用户登录
-                    logger.info(f"Cookie 文件不存在，将弹出浏览器供用户登录 ({config.name})")
+                        self._browser = await self._playwright.chromium.launch(
+                            headless=False,
+                            args=["--disable-blink-features=AutomationControlled"],
+                        )
+                        self._context = await self._browser.new_context(
+                            viewport={"width": 1280, "height": 900},
+                            user_agent=user_agent,
+                            locale="zh-CN",
+                        )
+                        await self._context.add_init_script(
+                            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+                        )
+
+                    logger.info(f"将弹出浏览器供用户登录 ({config.name})")
                     await self._interactive_login(config, cookie_path)
 
             logger.info(f"浏览器已启动 (UA: {user_agent[:50]}...)")
         except Exception as e:
-            logger.error(f"浏览器启动失败: {e}")
+            logger.error(f"浏览器启动失败: {e}", exc_info=True)
+            # 确保清理资源
+            try:
+                if self._browser:
+                    await self._browser.close()
+                if self._playwright:
+                    await self._playwright.stop()
+            except Exception:
+                pass
             self._browser = None
             self._context = None
+            self._playwright = None
 
     async def _verify_cookie_valid(self, config: PlatformConfig) -> bool:
-        """验证 cookie 是否有效：访问小红书首页，检查是否有登录态。"""
+        """验证 cookie 是否有效：访问小红书搜索页，检查是否能正常搜索。
+
+        检测策略：直接访问搜索页面，检查是否弹出登录弹窗或二维码。
+        比检查首页更可靠，因为搜索页面的登录检查更严格。
+        """
         if config.name != "xiaohongshu":
             return True
         page = await self._context.new_page()
         try:
+            # 直接访问搜索页面（比首页更能反映真实登录状态）
             await page.goto(
-                "https://www.xiaohongshu.com",
+                "https://www.xiaohongshu.com/search_result?keyword=test&source=web_search_result_note",
                 wait_until="domcontentloaded",
                 timeout=15_000,
             )
-            await asyncio.sleep(2)
-            # 检查是否存在可见的"登录"按钮 — 如果存在说明未登录
-            has_login_btn = await page.evaluate("""() => {
-                const btns = document.querySelectorAll('button, a, span, div');
-                for (const el of btns) {
-                    const t = (el.textContent || '').trim();
-                    if (t === '登录' || t === '立即登录' || t === '登录/注册') {
-                        const rect = el.getBoundingClientRect();
-                        if (rect.width > 0 && rect.height > 0) {
-                            return true;
-                        }
+            await asyncio.sleep(3)
+
+            # 检查是否有二维码登录弹窗（最可靠的失效信号）
+            validation = await page.evaluate("""() => {
+                // 检查二维码登录弹窗
+                const qrLogin = document.querySelector('[class*="qrcode"], [class*="login-container"], [class*="login-modal"]');
+                if (qrLogin) {
+                    const rect = qrLogin.getBoundingClientRect();
+                    if (rect.width > 50 && rect.height > 50) {
+                        return {valid: false, reason: 'qrcode_login_popup'};
                     }
                 }
-                return false;
+                // 检查是否有搜索结果或搜索相关的 DOM 元素
+                const noteItems = document.querySelectorAll('section.note-item, [data-note-id], .note-item');
+                if (noteItems.length > 0) {
+                    return {valid: true, reason: 'search_results_visible'};
+                }
+                // 检查 cookie 中是否有 web_session
+                if (document.cookie.includes('web_session')) {
+                    return {valid: true, reason: 'web_session_present'};
+                }
+                // 没有明确信号
+                return {valid: false, reason: 'no_results_no_session'};
             }""")
-            if has_login_btn:
-                logger.info("检测到登录按钮，Cookie 无效")
-                return False
-            logger.info("Cookie 验证通过")
-            return True
+
+            is_valid = validation.get("valid", False)
+            reason = validation.get("reason", "unknown")
+            if is_valid:
+                logger.info(f"Cookie 验证通过（{reason}）")
+            else:
+                logger.info(f"Cookie 验证失败（{reason}）")
+            return is_valid
         except Exception as e:
             logger.warning(f"Cookie 验证异常: {e}")
-            return False
+            # 验证异常时倾向于尝试使用，让 search_platform 自己处理
+            return True
         finally:
             await page.close()
 
@@ -663,13 +703,16 @@ class BrowserAgent:
             return False
 
     async def _dismiss_login_popup(self, page: Any) -> None:
-        """自动检测并关闭登录弹窗。"""
+        """自动检测并关闭登录弹窗（包括二维码登录弹窗）。"""
         try:
             close_selectors = [
                 ".close-button",
                 ".login-close",
                 "[class*='close']",
                 "button.close",
+                # 小红书二维码登录弹窗的关闭按钮
+                ".login-container [class*='close']",
+                "[class*='modal'] [class*='close']",
             ]
             for sel in close_selectors:
                 try:
@@ -677,9 +720,13 @@ class BrowserAgent:
                     if el and await el.is_visible():
                         await el.click()
                         await asyncio.sleep(0.5)
+                        logger.debug(f"已关闭弹窗 (selector: {sel})")
                         return
                 except Exception:
                     continue
+            # 尝试按 Escape 键关闭
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(0.5)
         except Exception:
             pass
 

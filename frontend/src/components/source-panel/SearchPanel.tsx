@@ -3,14 +3,19 @@
  *
  * 功能：
  * - 关键词输入 + 平台多选
- * - 调用 /api/search/stream SSE 端点，逐平台显示进度
- * - 搜索超时（>15s）显示"搜索超时"
+ * - 调用 /api/search/stream SSE 端点，按 stage 字段显示中文进度
+ * - 搜索超时（>60s）显示"搜索超时"
+ * - 搜索完成后保存历史记录
+ * - 新搜索时取消当前进行中的搜索
+ * - 结果按 qualityScore 降序统一排序，不按平台分组
  * - 勾选结果 + "加入学习材料"按钮
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { SearchResultItem } from './SearchResultItem'
+import { SearchHistoryCard } from './SearchHistoryCard'
 import { Button } from '../ui/Button'
-import type { SearchResult, PlatformType } from '../../types'
+import { useSearchStore } from '../../store/searchStore'
+import type { SearchResult, PlatformType, SearchStage } from '../../types'
 
 const PLATFORMS: { key: PlatformType; label: string; icon: string }[] = [
   { key: 'bilibili', label: 'B站', icon: '📺' },
@@ -20,7 +25,26 @@ const PLATFORMS: { key: PlatformType; label: string; icon: string }[] = [
   { key: 'xiaohongshu', label: '小红书', icon: '📕' },
 ]
 
-type PlatformStatus = 'idle' | 'searching' | 'done' | 'timeout' | 'error'
+/** 根据 SSE stage 字段生成中文状态文案 */
+function stageToMessage(stage: SearchStage, evt?: any): string {
+  switch (stage) {
+    case 'searching':
+      return evt?.message || '正在搜索...'
+    case 'filtering':
+      return evt?.message || `已获取 ${evt?.total ?? 0} 条，正在初筛...`
+    case 'extracting': {
+      const completed = evt?.completed ?? 0
+      const total = evt?.total ?? 0
+      return evt?.message || `正在提取详情（${completed}/${total}）...`
+    }
+    case 'evaluating':
+      return 'AI 正在评估内容质量...'
+    case 'error':
+      return evt?.message || '搜索出错'
+    default:
+      return ''
+  }
+}
 
 interface SearchPanelProps {
   onAddToMaterials: (results: SearchResult[]) => void
@@ -31,11 +55,14 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<PlatformType>>(new Set())
   const [results, setResults] = useState<SearchResult[]>([])
   const [checked, setChecked] = useState<Set<string>>(new Set())
-  const [platformStatus, setPlatformStatus] = useState<Record<string, PlatformStatus>>({})
+  const [searchStage, setSearchStage] = useState<SearchStage>('idle')
+  const [stageMessage, setStageMessage] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState('')
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const history = useSearchStore(s => s.history)
 
   const togglePlatform = (p: PlatformType) => {
     setSelectedPlatforms(prev => {
@@ -46,22 +73,26 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
   }
 
   const handleSearch = useCallback(async () => {
-    if (!query.trim() || isSearching) return
+    if (!query.trim()) return
+
+    // 取消当前进行中的搜索（允许新搜索覆盖旧搜索）
+    abortRef.current?.abort()
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+
     setError('')
     setResults([])
     setChecked(new Set())
-    setPlatformStatus({})
+    setSearchStage('idle')
+    setStageMessage('')
     setIsSearching(true)
 
-    // 取消上一次搜索
-    abortRef.current?.abort()
     abortRef.current = new AbortController()
 
     // 60s 超时
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = setTimeout(() => {
       abortRef.current?.abort()
       setIsSearching(false)
+      setSearchStage('error')
       setError('搜索超时，请重试')
     }, 60000)
 
@@ -94,26 +125,58 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
           if (!line.startsWith('data: ')) continue
           try {
             const evt = JSON.parse(line.slice(6))
-            if (evt.type === 'platform_start') {
-              setPlatformStatus(s => ({ ...s, [evt.platform]: 'searching' }))
-            } else if (evt.type === 'platform_done') {
-              setPlatformStatus(s => ({ ...s, [evt.platform]: 'done' }))
-            } else if (evt.type === 'platform_timeout') {
-              setPlatformStatus(s => ({ ...s, [evt.platform]: 'timeout' }))
-            } else if (evt.type === 'platform_error') {
-              setPlatformStatus(s => ({ ...s, [evt.platform]: 'error' }))
-            } else if (evt.type === 'results') {
-              setResults(evt.items.map((item: any) => ({
-                id: item.id,
-                title: item.title,
-                url: item.url,
-                platform: item.platform as PlatformType,
-                description: item.description,
-                qualityScore: item.qualityScore,
-                recommendationReason: item.recommendationReason,
-              })))
-            } else if (evt.type === 'done') {
+            const stage = evt.stage as SearchStage | undefined
+
+            if (stage === 'searching') {
+              setSearchStage('searching')
+              setStageMessage(stageToMessage('searching', evt))
+            } else if (stage === 'filtering') {
+              setSearchStage('filtering')
+              setStageMessage(stageToMessage('filtering', evt))
+            } else if (stage === 'extracting') {
+              setSearchStage('extracting')
+              setStageMessage(stageToMessage('extracting', evt))
+            } else if (stage === 'evaluating') {
+              setSearchStage('evaluating')
+              setStageMessage(stageToMessage('evaluating', evt))
+            } else if (stage === 'done') {
               if (timeoutRef.current) clearTimeout(timeoutRef.current)
+              setSearchStage('done')
+              setStageMessage('')
+
+              // Parse results and sort by qualityScore descending
+              const items: SearchResult[] = (evt.results ?? [])
+                .map((item: any) => ({
+                  id: item.id,
+                  title: item.title,
+                  url: item.url,
+                  platform: item.platform as PlatformType,
+                  description: item.description ?? '',
+                  qualityScore: item.qualityScore ?? 0,
+                  recommendationReason: item.recommendationReason ?? '',
+                  contentSummary: item.contentSummary,
+                  commentSummary: item.commentSummary,
+                  engagementMetrics: item.engagementMetrics,
+                  imageUrls: item.imageUrls,
+                }))
+                .sort((a: SearchResult, b: SearchResult) => b.qualityScore - a.qualityScore)
+
+              setResults(items)
+              setIsSearching(false)
+
+              // Save search history
+              useSearchStore.getState().addEntry({
+                id: `search-${Date.now()}`,
+                query: query.trim(),
+                platforms: platforms ?? PLATFORMS.map(p => p.key),
+                results: items,
+                resultCount: items.length,
+                searchedAt: new Date().toISOString(),
+              })
+            } else if (stage === 'error') {
+              if (timeoutRef.current) clearTimeout(timeoutRef.current)
+              setSearchStage('error')
+              setError(evt.message || '搜索出错')
               setIsSearching(false)
             }
           } catch { /* 忽略解析错误 */ }
@@ -122,12 +185,13 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError('搜索失败，请检查网络或重试')
+        setSearchStage('error')
       }
     } finally {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
       setIsSearching(false)
     }
-  }, [query, selectedPlatforms, isSearching])
+  }, [query, selectedPlatforms])
 
   // 清理
   useEffect(() => () => {
@@ -151,7 +215,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
     setQuery('')
   }
 
-  const activePlatforms = PLATFORMS.filter(p => platformStatus[p.key])
+  const isActive = isSearching && searchStage !== 'idle' && searchStage !== 'done' && searchStage !== 'error'
 
   return (
     <div className="flex flex-col gap-3">
@@ -167,7 +231,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
         />
         <button
           onClick={handleSearch}
-          disabled={isSearching || !query.trim()}
+          disabled={!query.trim()}
           aria-label="搜索资源"
           className="h-9 px-3 bg-[#1A73E8] text-white rounded-lg text-sm hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150"
         >
@@ -194,34 +258,21 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
         ))}
       </div>
 
-      {/* 平台搜索进度 */}
-      {activePlatforms.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {activePlatforms.map(p => {
-            const status = platformStatus[p.key]
-            return (
-              <div key={p.key} className="flex items-center gap-2 text-xs text-[#5F6368]">
-                <span>{p.icon}</span>
-                <span className="flex-1">{p.label}</span>
-                {status === 'searching' && (
-                  <span className="flex gap-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:0ms]" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:100ms]" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:200ms]" />
-                  </span>
-                )}
-                {status === 'done' && <span className="text-green-500">✓</span>}
-                {status === 'timeout' && <span className="text-orange-400">搜索超时</span>}
-                {status === 'error' && <span className="text-red-400">失败</span>}
-              </div>
-            )
-          })}
+      {/* 搜索阶段进度 */}
+      {isActive && stageMessage && (
+        <div className="flex items-center gap-2 text-xs text-[#5F6368] py-1">
+          <span className="flex gap-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:0ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:100ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:200ms]" />
+          </span>
+          <span>{stageMessage}</span>
         </div>
       )}
 
       {error && <p className="text-xs text-red-500">{error}</p>}
 
-      {/* 搜索结果 */}
+      {/* 搜索结果 — 统一排序，不按平台分组 */}
       {results.length > 0 && (
         <>
           <p className="text-xs font-medium text-[#5F6368] uppercase tracking-wide">
@@ -249,6 +300,25 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
         <p className="text-xs text-[#9AA0A6] text-center py-4">
           输入关键词后按 Enter 或点击搜索
         </p>
+      )}
+
+      {/* 搜索历史 */}
+      {history.length > 0 && results.length === 0 && !isSearching && (
+        <div className="flex flex-col gap-2 mt-2">
+          <p className="text-xs font-medium text-[#5F6368] uppercase tracking-wide">
+            搜索历史
+          </p>
+          {history.map(entry => (
+            <SearchHistoryCard
+              key={entry.id}
+              entry={entry}
+              isExpanded={expandedHistoryId === entry.id}
+              onToggle={() =>
+                setExpandedHistoryId(prev => prev === entry.id ? null : entry.id)
+              }
+            />
+          ))}
+        </div>
       )}
     </div>
   )

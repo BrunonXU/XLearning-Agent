@@ -6,12 +6,12 @@
 """
 
 import asyncio
-import json
 import logging
 import uuid
-from typing import List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter
+from fastapi.requests import Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -35,6 +35,20 @@ class SearchResultItem(BaseModel):
     description: str
     qualityScore: float
     recommendationReason: str
+    contentSummary: str = ""
+    commentSummary: str = ""
+    engagementMetrics: Dict[str, Any] = {}
+    imageUrls: List[str] = []
+
+
+class SearchProgressEvent(BaseModel):
+    stage: Literal["searching", "filtering", "extracting", "evaluating", "done", "error"]
+    message: str = ""
+    platform: Optional[str] = None
+    total: Optional[int] = None
+    completed: Optional[int] = None
+    results: Optional[List[SearchResultItem]] = None
+    error: Optional[str] = None
 
 
 @router.post("/search", response_model=List[SearchResultItem])
@@ -84,82 +98,101 @@ async def search_resources(body: SearchRequest):
 
 
 @router.post("/search/stream")
-async def search_stream(body: SearchRequest):
+async def search_stream(body: SearchRequest, request: Request):
     """
-    SSE 流式搜索端点，逐平台推送进度和结果。
-    事件格式：
-      data: {"type": "platform_start", "platform": "bilibili"}
-      data: {"type": "platform_done", "platform": "bilibili", "count": 3}
-      data: {"type": "results", "items": [...]}
-      data: {"type": "done"}
+    SSE 流式搜索端点，通过 SearchOrchestrator 五阶段漏斗推送进度。
+
+    事件格式（stage 字段）：
+      data: {"stage": "searching", "message": "正在搜索小红书...", "platform": "xiaohongshu"}
+      data: {"stage": "filtering", "message": "已获取 30 条，正在初筛...", "total": 30}
+      data: {"stage": "extracting", "message": "正在提取详情（3/15）...", "completed": 3, "total": 15}
+      data: {"stage": "evaluating", "message": "AI 正在评估内容质量..."}
+      data: {"stage": "done", "results": [...]}
+      data: {"stage": "error", "message": "..."}
     """
+    cancel_event = asyncio.Event()
+
     async def _generate():
-        platforms = body.platforms or list(VALID_PLATFORMS)
-        all_results: List[SearchResultItem] = []
+        if not body.query.strip():
+            evt = SearchProgressEvent(stage="done", results=[])
+            yield f"data: {evt.model_dump_json()}\n\n"
+            return
 
-        for platform in platforms:
-            start_evt = json.dumps({"type": "platform_start", "platform": platform}, ensure_ascii=False)
-            yield f"data: {start_evt}\n\n"
-            await asyncio.sleep(0)
+        platforms = [p for p in (body.platforms or list(VALID_PLATFORMS)) if p in VALID_PLATFORMS]
+        if not platforms:
+            evt = SearchProgressEvent(stage="error", message="无有效搜索平台")
+            yield f"data: {evt.model_dump_json()}\n\n"
+            return
 
-            try:
-                from src.specialists.resource_searcher import ResourceSearcher
-                searcher = ResourceSearcher()
-                loop = asyncio.get_event_loop()
-                results = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda p=platform: searcher.search(
-                            query=body.query,
-                            platforms=[p],
-                            user_selected=True,
-                        )
-                    ),
-                    timeout=45.0,
-                )
-                items = [
-                    SearchResultItem(
-                        id=str(uuid.uuid4()),
-                        title=r.title,
-                        url=r.url,
-                        platform=r.platform,
-                        description=r.description[:120] if r.description else "",
-                        qualityScore=round(r.quality_score, 2),
-                        recommendationReason=r.recommendation_reason,
+        from src.specialists.search_orchestrator import SearchOrchestrator
+        orchestrator = SearchOrchestrator()
+
+        try:
+            async for event in orchestrator.search_all_platforms_stream(
+                query=body.query,
+                platforms=platforms,
+                cancel_event=cancel_event,
+            ):
+                # Check if client disconnected (AbortController)
+                if await request.is_disconnected():
+                    cancel_event.set()
+                    break
+
+                if cancel_event.is_set():
+                    break
+
+                stage = event.get("stage", "")
+
+                if stage == "done":
+                    # Convert raw result dicts to SearchResultItem for the SSE response
+                    raw_results = event.get("results", [])
+                    items = [
+                        _to_search_result_item(r) for r in raw_results
+                    ]
+                    progress = SearchProgressEvent(stage="done", results=items)
+                    yield f"data: {progress.model_dump_json()}\n\n"
+                else:
+                    # Forward searching/filtering/extracting/evaluating/error events as-is
+                    progress = SearchProgressEvent(
+                        stage=stage,
+                        message=event.get("message", ""),
+                        platform=event.get("platform"),
+                        total=event.get("total"),
+                        completed=event.get("completed"),
+                        error=event.get("message") if stage == "error" else None,
                     )
-                    for r in results
-                ]
-                all_results.extend(items)
-                done_evt = json.dumps(
-                    {"type": "platform_done", "platform": platform, "count": len(items)},
-                    ensure_ascii=False,
-                )
-                yield f"data: {done_evt}\n\n"
-
-            except asyncio.TimeoutError:
-                timeout_evt = json.dumps(
-                    {"type": "platform_timeout", "platform": platform},
-                    ensure_ascii=False,
-                )
-                yield f"data: {timeout_evt}\n\n"
-            except Exception as e:
-                err_evt = json.dumps(
-                    {"type": "platform_error", "platform": platform, "message": str(e)},
-                    ensure_ascii=False,
-                )
-                yield f"data: {err_evt}\n\n"
-
-        # 最终结果按 quality_score 降序
-        all_results.sort(key=lambda x: x.qualityScore, reverse=True)
-        results_evt = json.dumps(
-            {"type": "results", "items": [r.model_dump() for r in all_results]},
-            ensure_ascii=False,
-        )
-        yield f"data: {results_evt}\n\n"
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    yield f"data: {progress.model_dump_json()}\n\n"
+        except Exception as e:
+            logger.error(f"[search/stream] error: {e}")
+            err_evt = SearchProgressEvent(stage="error", message=str(e))
+            yield f"data: {err_evt.model_dump_json()}\n\n"
+        finally:
+            # Ensure browser resources are released
+            cancel_event.set()
+            try:
+                await orchestrator.close()
+            except Exception:
+                pass
 
     return StreamingResponse(
         _generate(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _to_search_result_item(result_dict: dict) -> SearchResultItem:
+    """Convert a SearchResult dict (from orchestrator) to a SearchResultItem for SSE."""
+    return SearchResultItem(
+        id=result_dict.get("id") or str(uuid.uuid4()),
+        title=result_dict.get("title", ""),
+        url=result_dict.get("url", ""),
+        platform=result_dict.get("platform", ""),
+        description=(result_dict.get("description", "") or "")[:120],
+        qualityScore=round(result_dict.get("quality_score", 0.0), 2),
+        recommendationReason=result_dict.get("recommendation_reason", ""),
+        contentSummary=result_dict.get("content_summary", ""),
+        commentSummary=result_dict.get("comment_summary", ""),
+        engagementMetrics=result_dict.get("engagement_metrics", {}),
+        imageUrls=result_dict.get("image_urls", []),
     )

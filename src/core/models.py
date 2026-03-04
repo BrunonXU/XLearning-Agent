@@ -53,6 +53,10 @@ class SearchResult(BaseModel):
     recommendation_reason: str = ""
     engagement_metrics: Dict[str, Any] = Field(default_factory=dict)
     comments_preview: List[str] = Field(default_factory=list)
+    # 搜索体验重设计新增字段（需求 2.8, 7.2）
+    content_summary: str = ""  # AI 内容摘要
+    comment_summary: str = ""  # 评论结论摘要
+    image_urls: List[str] = Field(default_factory=list)  # 图片 URL 列表
 
     def to_dict(self) -> dict:
         """序列化为字典"""

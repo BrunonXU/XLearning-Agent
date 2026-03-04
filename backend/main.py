@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.routers import plans, session, chat, upload, search, studio, notes
+from backend.routers import plans, session, chat, upload, search, studio, notes, resource
 
 app = FastAPI(title="XLearning API", version="0.1.0")
 
@@ -39,6 +39,7 @@ app.include_router(upload.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(studio.router, prefix="/api")
 app.include_router(notes.router, prefix="/api")
+app.include_router(resource.router, prefix="/api")
 
 
 @app.get("/api/health")

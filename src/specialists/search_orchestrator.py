@@ -14,13 +14,17 @@ SearchOrchestrator - 搜索调度器
 
 import asyncio
 import logging
-from typing import List, Optional
+from typing import AsyncGenerator, List, Optional
 
 from src.core.models import SearchResult
 from src.specialists.browser_agent import BrowserAgent
 from src.specialists.browser_models import RawSearchResult, ScoredResult
+from src.specialists.engagement_ranker import EngagementRanker
+from src.specialists.pipeline_executor import PipelineExecutor
 from src.specialists.platform_configs import PLATFORM_CONFIGS, PlatformConfig
+from src.specialists.quality_assessor import QualityAssessor
 from src.specialists.quality_scorer import QualityScorer
+from src.specialists.resource_collector import ResourceCollector
 from src.specialists.search_cache import SearchCache
 from src.specialists.bilibili_searcher import BiliBiliSearcher
 
@@ -70,6 +74,10 @@ class SearchOrchestrator:
         self._browser_agent = BrowserAgent()
         self._quality_scorer = QualityScorer(llm_provider=llm_provider)
         self._bilibili_searcher = BiliBiliSearcher()
+        # 搜索体验重设计：两阶段漏斗筛选 + 流水线执行
+        self._engagement_ranker = EngagementRanker()
+        self._quality_assessor = QualityAssessor(llm_provider=llm_provider)
+        self._resource_collector = ResourceCollector()
 
     # ------------------------------------------------------------------
     # Public API
@@ -163,6 +171,229 @@ class SearchOrchestrator:
         await self.close()
 
         return final
+
+    async def search_all_platforms_stream(
+        self,
+        query: str,
+        platforms: List[str],
+        top_k: int = 10,
+        per_platform_limit: Optional[int] = None,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> AsyncGenerator[dict, None]:
+        """
+        流式搜索：通过 yield 推送各阶段进度事件。
+
+        Events:
+        - {"stage": "searching", "message": "正在搜索小红书...", "platform": "xiaohongshu"}
+        - {"stage": "filtering", "message": "已获取 N 条，正在初筛...", "total": N}
+        - {"stage": "extracting", "message": "正在提取详情（3/15）...", "completed": 3, "total": 15}
+        - {"stage": "evaluating", "message": "AI 正在评估内容质量..."}
+        - {"stage": "done", "results": [...]}
+        - {"stage": "error", "message": "..."}
+
+        Flow:
+        1. Check cache → hit: yield done directly
+        2. Concurrent search all platforms → yield searching progress
+        3. EngagementRanker filter → yield filtering
+        4. PipelineExecutor extract+assess → yield extracting/evaluating
+        5. Sort top_k → write cache → yield done
+
+        Args:
+            query: 搜索关键词
+            platforms: 平台列表
+            top_k: 最终返回结果数量
+            per_platform_limit: 每平台搜索条数，None 则使用默认值 10
+            cancel_event: 取消信号，设置后中断所有进行中的任务
+        """
+        PLATFORM_TIMEOUT = 45.0  # 单平台超时（秒）
+
+        _cancel = cancel_event or asyncio.Event()
+
+        # ---- 1. 检查缓存 ----
+        cached = self._cache.get(query, platforms)
+        if cached is not None:
+            logger.info(f"缓存命中: {query} ({len(cached)} 条)")
+            yield {
+                "stage": "done",
+                "results": [r.to_dict() for r in cached[:top_k]],
+            }
+            return
+
+        # ---- 2. 过滤有效平台 ----
+        valid_platforms = [p for p in platforms if p in PLATFORM_CONFIGS]
+        if not valid_platforms:
+            logger.warning(f"无有效平台: {platforms}")
+            yield {"stage": "error", "message": "无有效搜索平台"}
+            return
+
+        limit = per_platform_limit if per_platform_limit is not None else 10
+
+        # ---- 3. 并发搜索各平台 ----
+        all_raw: List[RawSearchResult] = []
+        errors: List[str] = []
+
+        for p in valid_platforms:
+            if _cancel.is_set():
+                await self.close()
+                return
+            yield {
+                "stage": "searching",
+                "message": f"正在搜索{PLATFORM_CONFIGS[p].name}...",
+                "platform": p,
+            }
+
+        async def _search_with_timeout(platform_name: str) -> List[RawSearchResult]:
+            config = PLATFORM_CONFIGS[platform_name]
+            return await asyncio.wait_for(
+                self._search_single_platform(query, config, limit),
+                timeout=PLATFORM_TIMEOUT,
+            )
+
+        tasks = [_search_with_timeout(p) for p in valid_platforms]
+        results_per_platform = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, result in enumerate(results_per_platform):
+            platform_name = valid_platforms[i]
+            if isinstance(result, Exception):
+                err_msg = f"平台 {platform_name} 搜索失败: {result}"
+                logger.warning(err_msg)
+                errors.append(err_msg)
+                continue
+            if result:
+                all_raw.extend(result)
+                logger.info(f"{platform_name}: {len(result)} 条结果")
+
+        if not all_raw:
+            await self.close()
+            error_detail = "；".join(errors) if errors else "所有平台均无结果"
+            yield {"stage": "error", "message": f"搜索失败: {error_detail}"}
+            return
+
+        if _cancel.is_set():
+            await self.close()
+            return
+
+        # ---- 4. EngagementRanker 初筛 ----
+        yield {
+            "stage": "filtering",
+            "message": f"已获取 {len(all_raw)} 条，正在初筛...",
+            "total": len(all_raw),
+        }
+
+        candidates = self._engagement_ranker.rank(all_raw)
+        total_candidates = len(candidates)
+
+        if _cancel.is_set():
+            await self.close()
+            return
+
+        # ---- 5. PipelineExecutor 提取 + 评估 ----
+        pipeline = PipelineExecutor(
+            browser_agent=self._browser_agent,
+            resource_collector=self._resource_collector,
+            quality_assessor=self._quality_assessor,
+            cancel_event=_cancel,
+        )
+
+        # We need to yield extracting events during pipeline execution.
+        # Use a shared list to collect progress events, then yield after pipeline.
+        extract_events: List[dict] = []
+
+        async def _progress_callback(completed: int, total: int) -> None:
+            extract_events.append({
+                "stage": "extracting",
+                "message": f"正在提取详情（{completed}/{total}）...",
+                "completed": completed,
+                "total": total,
+            })
+
+        yield {
+            "stage": "extracting",
+            "message": f"正在提取详情（0/{total_candidates}）...",
+            "completed": 0,
+            "total": total_candidates,
+        }
+
+        scored_results: List[ScoredResult] = []
+        try:
+            scored_results = await pipeline.execute(
+                candidates, progress_callback=_progress_callback
+            )
+        except Exception as e:
+            logger.error(f"流水线执行异常: {e}")
+
+        # Yield accumulated extracting progress events
+        for evt in extract_events:
+            if _cancel.is_set():
+                await self.close()
+                return
+            yield evt
+
+        # ---- 6. 关闭浏览器（提取完成后，LLM 评估前）----
+        await self.close()
+
+        if _cancel.is_set():
+            return
+
+        # ---- 7. 处理评估结果 ----
+        if not scored_results:
+            # LLM 整体失败降级：使用互动数据排序结果（需求 5.9）
+            logger.warning("流水线无结果，使用互动数据排序降级")
+            scored_results = [
+                ScoredResult(raw=r, quality_score=0.0, recommendation_reason="")
+                for r in candidates
+            ]
+
+        yield {
+            "stage": "evaluating",
+            "message": "AI 正在评估内容质量...",
+        }
+
+        # ---- 8. 排序取 top_k ----
+        scored_results.sort(key=lambda s: s.quality_score, reverse=True)
+        top_scored = scored_results[:top_k]
+
+        # ---- 9. 转换为 SearchResult ----
+        final = [self._to_search_result_extended(s) for s in top_scored]
+
+        # ---- 10. 写入缓存 ----
+        self._cache.set(query, platforms, final)
+
+        # ---- 11. yield done ----
+        yield {
+            "stage": "done",
+            "results": [r.to_dict() for r in final],
+        }
+
+    @staticmethod
+    def _to_search_result_extended(scored: ScoredResult) -> SearchResult:
+        """将 ScoredResult（含摘要字段）转换为 SearchResult。"""
+        raw = scored.raw
+        comments_preview = []
+        if raw.top_comments:
+            comments_preview = [
+                c.get("text", "")[:200] for c in raw.top_comments[:5]
+            ]
+        elif raw.comments:
+            comments_preview = [c[:200] for c in raw.comments[:5]]
+
+        return SearchResult(
+            title=raw.title,
+            url=raw.url,
+            platform=raw.platform,
+            type=raw.resource_type,
+            description=(
+                raw.description
+                or (raw.content_snippet[:200] if raw.content_snippet else "")
+            ),
+            quality_score=scored.quality_score,
+            recommendation_reason=scored.recommendation_reason,
+            engagement_metrics=raw.engagement_metrics,
+            comments_preview=comments_preview,
+            content_summary=scored.content_summary,
+            comment_summary=scored.comment_summary,
+            image_urls=list(raw.image_urls) if raw.image_urls else [],
+        )
 
     def expand_keywords(self, query: str) -> List[str]:
         """[TODO: 未来实现] 使用 LLM 扩展搜索关键词。MVP 返回原始关键词。"""

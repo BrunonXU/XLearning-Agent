@@ -41,3 +41,8 @@ class ScoredResult(BaseModel):
     raw: RawSearchResult
     quality_score: float = 0.0
     recommendation_reason: str = ""
+    # 新增字段：AI 摘要与提取内容
+    content_summary: str = ""         # AI 内容摘要（≤150 字）
+    comment_summary: str = ""         # 评论结论摘要（≤100 字）
+    extracted_content: str = ""       # 提取的正文内容（用于缓存）
+

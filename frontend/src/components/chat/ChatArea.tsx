@@ -1,7 +1,6 @@
 import React, { useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MessageList } from './MessageList'
-import { SuggestedQuestions } from './SuggestedQuestions'
 import { ChatInput } from './ChatInput'
 import { useChatStore } from '../../store/chatStore'
 import { useSourceStore } from '../../store/sourceStore'
@@ -16,7 +15,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
   const {
     messages,
     isStreaming,
-    suggestedQuestions,
     streamingContent,
   } = useChatStore()
   const { materials } = useSourceStore()
@@ -30,9 +28,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* 建议问题区 */}
-      <SuggestedQuestions questions={suggestedQuestions} onSelect={sendMessage} />
-
       {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-8 py-6">
         <MessageList messages={messages} isStreaming={isStreaming && !streamingContent} />

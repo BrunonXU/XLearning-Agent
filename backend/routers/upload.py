@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from backend.store import get_session_store
@@ -91,7 +92,7 @@ async def _process_pdf(material_id: str, plan_id: str, file_path: Path, filename
 
 
 def _extract_pdf_text(content: bytes) -> str:
-    """提取 PDF 文本，优先 PyMuPDF，降级 pdfplumber"""
+    """提取 PDF 纯文本（用于 RAG 索引）"""
     try:
         import fitz  # PyMuPDF
         doc = fitz.open(stream=content, filetype="pdf")
@@ -105,6 +106,42 @@ def _extract_pdf_text(content: bytes) -> str:
     except ImportError:
         pass
     return ""
+
+
+def _extract_pdf_rich_content(content: bytes) -> str:
+    """提取 PDF 图文混排内容（文本 + base64 图片），返回 Markdown 格式"""
+    import base64
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=content, filetype="pdf")
+        parts: list[str] = []
+        for page_idx, page in enumerate(doc):
+            # 提取文本
+            text = page.get_text().strip()
+            if text:
+                parts.append(text)
+
+            # 提取图片
+            for img_info in page.get_images(full=True):
+                xref = img_info[0]
+                try:
+                    img_data = doc.extract_image(xref)
+                    if img_data and img_data.get("image"):
+                        ext = img_data.get("ext", "png")
+                        mime = f"image/{ext}" if ext != "jpg" else "image/jpeg"
+                        b64 = base64.b64encode(img_data["image"]).decode("ascii")
+                        parts.append(f"\n![图片](data:{mime};base64,{b64})\n")
+                except Exception:
+                    continue  # 跳过无法提取的图片
+
+            # 页面分隔
+            if page_idx < len(doc) - 1:
+                parts.append("\n---\n")
+
+        return "\n".join(parts)
+    except ImportError:
+        # PyMuPDF 不可用，降级到纯文本
+        return _extract_pdf_text(content)
 
 
 async def _process_text_file(material_id: str, plan_id: str, file_path: Path, filename: str):
@@ -247,6 +284,12 @@ async def get_material_status(material_id: str, plan_id: str = ""):
     for m in store.get("materials", []):
         if m["id"] == material_id:
             return {"id": material_id, "status": m["status"]}
+
+    # store 中没有（可能后端重启了），检查磁盘上是否有文件
+    for f in UPLOAD_DIR.iterdir():
+        if f.name.startswith(f"{material_id}_"):
+            return {"id": material_id, "status": "ready"}
+
     raise HTTPException(status_code=404, detail="Material not found")
 
 
@@ -262,6 +305,18 @@ async def get_material_summary(material_id: str, plan_id: str = ""):
                 "name": name,
                 "summary": f"📄 已加载材料：{name}。你可以向 AI 提问关于此材料的内容。",
             }
+
+    # store 中没有，尝试从磁盘查找
+    for f in UPLOAD_DIR.iterdir():
+        if f.name.startswith(f"{material_id}_"):
+            # 从文件名提取原始名称（格式: {uuid}_{filename}）
+            name = f.name[len(material_id) + 1:]
+            return {
+                "id": material_id,
+                "name": name,
+                "summary": f"📄 已加载材料：{name}。你可以向 AI 提问关于此材料的内容。",
+            }
+
     raise HTTPException(status_code=404, detail="Material not found")
 
 
@@ -271,3 +326,64 @@ async def delete_material(material_id: str, plan_id: str = ""):
     store = get_session_store(plan_id)
     materials = store.get("materials", [])
     store["materials"] = [m for m in materials if m["id"] != material_id]
+
+
+@router.get("/material/{material_id}/content")
+async def get_material_content(material_id: str, plan_id: str = ""):
+    """获取材料的原始文本内容（用于 ContentViewer 展示）"""
+    store = get_session_store(plan_id)
+    mat = None
+    for m in store.get("materials", []):
+        if m["id"] == material_id:
+            mat = m
+            break
+
+    # 即使 store 中没有记录（后端重启），也尝试从磁盘查找
+    mat_type = mat.get("type", "text") if mat else None
+
+    # 查找上传文件
+    for f in UPLOAD_DIR.iterdir():
+        if f.name.startswith(f"{material_id}_"):
+            # 如果 store 中没有类型信息，从文件名推断
+            if mat_type is None:
+                ext = f.suffix.lower()
+                if ext == ".pdf":
+                    mat_type = "pdf"
+                elif ext in (".md", ".markdown"):
+                    mat_type = "markdown"
+                else:
+                    mat_type = "text"
+
+            file_type = "markdown" if mat_type == "markdown" else ("pdf" if mat_type == "pdf" else "text")
+            try:
+                if mat_type == "pdf":
+                    content = _extract_pdf_text(f.read_bytes())
+                else:
+                    content = f.read_text(encoding="utf-8", errors="replace")
+                return {"id": material_id, "content": content, "fileType": file_type}
+            except Exception as e:
+                logger.error(f"读取材料内容失败: {e}")
+                raise HTTPException(status_code=500, detail="读取内容失败")
+
+    if not mat:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    if mat.get("status") != "ready":
+        return {"id": material_id, "content": "", "fileType": "text", "error": "材料尚未处理完成"}
+
+    return {"id": material_id, "content": "", "fileType": "text", "error": "文件未找到"}
+
+
+@router.get("/material/{material_id}/raw")
+async def get_material_raw(material_id: str):
+    """返回原始上传文件（PDF 内嵌渲染用）"""
+    for f in UPLOAD_DIR.iterdir():
+        if f.name.startswith(f"{material_id}_"):
+            ext = f.suffix.lower()
+            media = "application/pdf" if ext == ".pdf" else "text/plain; charset=utf-8"
+            return FileResponse(
+                f,
+                media_type=media,
+                headers={"Content-Disposition": "inline"},
+            )
+    raise HTTPException(status_code=404, detail="File not found")
