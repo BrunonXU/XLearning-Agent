@@ -23,6 +23,7 @@ export interface SearchResult {
   commentSummary?: string;              // 评论结论摘要
   engagementMetrics?: Record<string, any>;  // 互动指标
   imageUrls?: string[];                 // 图片 URL 列表
+  topComments?: string[];               // 高赞评论文本列表
 }
 
 export interface ChatMessage {

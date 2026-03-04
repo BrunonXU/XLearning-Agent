@@ -11,7 +11,7 @@
 import uuid
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +19,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from backend.store import get_session_store
+from backend import database
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["upload"])
@@ -53,18 +53,9 @@ def _detect_type(filename: str) -> str:
 
 
 async def _process_pdf(material_id: str, plan_id: str, file_path: Path, filename: str):
-    """后台任务：PDF 解析 → chunking → ready，更新 store 状态"""
-    store = get_session_store(plan_id)
-    materials: list = store.setdefault("materials", [])
-
-    def _set_status(status: str):
-        for m in materials:
-            if m["id"] == material_id:
-                m["status"] = status
-                break
-
+    """后台任务：PDF 解析 → chunking → ready，更新数据库状态"""
     try:
-        _set_status("parsing")
+        database.update_material_status(material_id, "parsing")
         await asyncio.sleep(0.5)  # 模拟解析延迟
 
         # 尝试用 RAGEngine 真实解析
@@ -72,10 +63,9 @@ async def _process_pdf(material_id: str, plan_id: str, file_path: Path, filename
             from src.rag import RAGEngine
             rag = RAGEngine(collection_name=f"plan_{plan_id}")
             content = file_path.read_bytes()
-            # 用 PyMuPDF 或 pdfplumber 提取文本
             text = _extract_pdf_text(content)
             if text:
-                _set_status("chunking")
+                database.update_material_status(material_id, "chunking")
                 await asyncio.sleep(0.3)
                 rag.add_document(
                     content=text,
@@ -85,10 +75,10 @@ async def _process_pdf(material_id: str, plan_id: str, file_path: Path, filename
         except Exception as e:
             logger.warning(f"RAG ingest failed for {filename}: {e}")
 
-        _set_status("ready")
+        database.update_material_status(material_id, "ready")
     except Exception as e:
         logger.error(f"PDF processing failed: {e}")
-        _set_status("error")
+        database.update_material_status(material_id, "error")
 
 
 def _extract_pdf_text(content: bytes) -> str:
@@ -146,22 +136,13 @@ def _extract_pdf_rich_content(content: bytes) -> str:
 
 async def _process_text_file(material_id: str, plan_id: str, file_path: Path, filename: str):
     """后台任务：MD/TXT 文件解析 → chunking → ready"""
-    store = get_session_store(plan_id)
-    materials: list = store.setdefault("materials", [])
-
-    def _set_status(status: str):
-        for m in materials:
-            if m["id"] == material_id:
-                m["status"] = status
-                break
-
     try:
-        _set_status("parsing")
+        database.update_material_status(material_id, "parsing")
         await asyncio.sleep(0.3)
 
         text = file_path.read_text(encoding="utf-8", errors="replace")
         if text.strip():
-            _set_status("chunking")
+            database.update_material_status(material_id, "chunking")
             await asyncio.sleep(0.2)
             try:
                 from src.rag import RAGEngine
@@ -174,31 +155,28 @@ async def _process_text_file(material_id: str, plan_id: str, file_path: Path, fi
             except Exception as e:
                 logger.warning(f"RAG ingest failed for {filename}: {e}")
 
-        _set_status("ready")
+        database.update_material_status(material_id, "ready")
     except Exception as e:
         logger.error(f"Text file processing failed: {e}")
-        _set_status("error")
+        database.update_material_status(material_id, "error")
 
 
 async def _process_url(material_id: str, plan_id: str, url: str):
     """后台任务：抓取 URL 内容 → chunking → ready"""
-    store = get_session_store(plan_id)
-    materials: list = store.setdefault("materials", [])
-
-    def _set_status(status: str):
-        for m in materials:
-            if m["id"] == material_id:
-                m["status"] = status
-                break
-
     try:
-        _set_status("parsing")
+        database.update_material_status(material_id, "parsing")
         await asyncio.sleep(1.0)
         # TODO: 接入 GitHub README 抓取 / 网页爬取
-        _set_status("ready")
+        database.update_material_status(material_id, "ready")
     except Exception as e:
         logger.error(f"URL processing failed: {e}")
-        _set_status("error")
+        database.update_material_status(material_id, "error")
+
+
+def _sync_source_count(plan_id: str):
+    """Sync plan's source_count with actual material count in database."""
+    materials = database.get_materials(plan_id)
+    database.update_plan(plan_id, {"sourceCount": len(materials)})
 
 
 @router.post("/upload", response_model=UploadResponse, status_code=201)
@@ -211,7 +189,7 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="No filename")
 
     material_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat()
     mat_type = _detect_type(file.filename)
 
     # 保存文件
@@ -219,18 +197,22 @@ async def upload_file(
     content = await file.read()
     save_path.write_bytes(content)
 
-    # 写入 store
-    store = get_session_store(plan_id)
-    store.setdefault("materials", []).append({
+    # 写入数据库
+    database.insert_material({
         "id": material_id,
+        "planId": plan_id,
         "name": file.filename,
         "type": mat_type,
+        "url": None,
         "status": "parsing",
         "addedAt": now,
+        "extraData": {},
     })
 
+    # Sync source_count
+    _sync_source_count(plan_id)
+
     # 后台处理
-    mat_type = _detect_type(file.filename)
     if mat_type == "pdf":
         background_tasks.add_task(_process_pdf, material_id, plan_id, save_path, file.filename)
     elif mat_type in ("markdown", "text"):
@@ -250,21 +232,26 @@ async def upload_file(
 @router.post("/upload/url", response_model=UploadResponse, status_code=201)
 async def upload_url(body: UrlUploadRequest, background_tasks: BackgroundTasks):
     material_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat()
 
     # 从 URL 推断名称
     name = body.url.split("/")[-1] or body.url[:40]
     mat_type = "github" if "github.com" in body.url else "web"
 
-    store = get_session_store(body.planId)
-    store.setdefault("materials", []).append({
+    # 写入数据库
+    database.insert_material({
         "id": material_id,
+        "planId": body.planId,
         "name": name,
         "type": mat_type,
         "url": body.url,
         "status": "parsing",
         "addedAt": now,
+        "extraData": {},
     })
+
+    # Sync source_count
+    _sync_source_count(body.planId)
 
     background_tasks.add_task(_process_url, material_id, body.planId, body.url)
 
@@ -280,12 +267,14 @@ async def upload_url(body: UrlUploadRequest, background_tasks: BackgroundTasks):
 @router.get("/material/{material_id}/status")
 async def get_material_status(material_id: str, plan_id: str = ""):
     """轮询材料处理状态"""
-    store = get_session_store(plan_id)
-    for m in store.get("materials", []):
-        if m["id"] == material_id:
-            return {"id": material_id, "status": m["status"]}
+    # Query database for the material
+    if plan_id:
+        materials = database.get_materials(plan_id)
+        for m in materials:
+            if m["id"] == material_id:
+                return {"id": material_id, "status": m["status"]}
 
-    # store 中没有（可能后端重启了），检查磁盘上是否有文件
+    # Fallback: check disk for uploaded files
     for f in UPLOAD_DIR.iterdir():
         if f.name.startswith(f"{material_id}_"):
             return {"id": material_id, "status": "ready"}
@@ -296,20 +285,20 @@ async def get_material_status(material_id: str, plan_id: str = ""):
 @router.get("/material/{material_id}/summary")
 async def get_material_summary(material_id: str, plan_id: str = ""):
     """获取材料摘要，点击材料时插入对话区"""
-    store = get_session_store(plan_id)
-    for m in store.get("materials", []):
-        if m["id"] == material_id:
-            name = m.get("name", "未知材料")
-            return {
-                "id": material_id,
-                "name": name,
-                "summary": f"📄 已加载材料：{name}。你可以向 AI 提问关于此材料的内容。",
-            }
+    if plan_id:
+        materials = database.get_materials(plan_id)
+        for m in materials:
+            if m["id"] == material_id:
+                name = m.get("name", "未知材料")
+                return {
+                    "id": material_id,
+                    "name": name,
+                    "summary": f"📄 已加载材料：{name}。你可以向 AI 提问关于此材料的内容。",
+                }
 
-    # store 中没有，尝试从磁盘查找
+    # Fallback: try to find from disk
     for f in UPLOAD_DIR.iterdir():
         if f.name.startswith(f"{material_id}_"):
-            # 从文件名提取原始名称（格式: {uuid}_{filename}）
             name = f.name[len(material_id) + 1:]
             return {
                 "id": material_id,
@@ -323,28 +312,27 @@ async def get_material_summary(material_id: str, plan_id: str = ""):
 @router.delete("/material/{material_id}", status_code=204)
 async def delete_material(material_id: str, plan_id: str = ""):
     """移除材料"""
-    store = get_session_store(plan_id)
-    materials = store.get("materials", [])
-    store["materials"] = [m for m in materials if m["id"] != material_id]
+    deleted = database.delete_material(material_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Material not found")
 
 
 @router.get("/material/{material_id}/content")
 async def get_material_content(material_id: str, plan_id: str = ""):
     """获取材料的原始文本内容（用于 ContentViewer 展示）"""
-    store = get_session_store(plan_id)
     mat = None
-    for m in store.get("materials", []):
-        if m["id"] == material_id:
-            mat = m
-            break
+    if plan_id:
+        materials = database.get_materials(plan_id)
+        for m in materials:
+            if m["id"] == material_id:
+                mat = m
+                break
 
-    # 即使 store 中没有记录（后端重启），也尝试从磁盘查找
     mat_type = mat.get("type", "text") if mat else None
 
     # 查找上传文件
     for f in UPLOAD_DIR.iterdir():
         if f.name.startswith(f"{material_id}_"):
-            # 如果 store 中没有类型信息，从文件名推断
             if mat_type is None:
                 ext = f.suffix.lower()
                 if ext == ".pdf":

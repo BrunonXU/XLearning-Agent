@@ -47,10 +47,11 @@ function stageToMessage(stage: SearchStage, evt?: any): string {
 }
 
 interface SearchPanelProps {
+  planId?: string
   onAddToMaterials: (results: SearchResult[]) => void
 }
 
-export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) => {
+export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMaterials }) => {
   const [query, setQuery] = useState('')
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<PlatformType>>(new Set())
   const [results, setResults] = useState<SearchResult[]>([])
@@ -158,6 +159,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
                   commentSummary: item.commentSummary,
                   engagementMetrics: item.engagementMetrics,
                   imageUrls: item.imageUrls,
+                  topComments: item.topComments,
                 }))
                 .sort((a: SearchResult, b: SearchResult) => b.qualityScore - a.qualityScore)
 
@@ -165,7 +167,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
               setIsSearching(false)
 
               // Save search history
-              useSearchStore.getState().addEntry({
+              useSearchStore.getState().addEntry(planId, {
                 id: `search-${Date.now()}`,
                 query: query.trim(),
                 platforms: platforms ?? PLATFORMS.map(p => p.key),
@@ -220,33 +222,33 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
   return (
     <div className="flex flex-col gap-3">
       {/* 搜索输入 */}
-      <div className="flex gap-1.5">
+      <div className="flex gap-2">
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           placeholder="搜索学习资源..."
-          className="flex-1 h-9 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
+          className="flex-1 h-10 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
           aria-label="搜索关键词"
         />
         <button
           onClick={handleSearch}
           disabled={!query.trim()}
           aria-label="搜索资源"
-          className="h-9 px-3 bg-[#1A73E8] text-white rounded-lg text-sm hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150"
+          className="h-10 px-4 bg-[#1A73E8] text-white rounded-lg text-sm hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150"
         >
           {isSearching ? '…' : '🔍'}
         </button>
       </div>
 
       {/* 平台选择 */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2">
         {PLATFORMS.map(p => (
           <button
             key={p.key}
             onClick={() => togglePlatform(p.key)}
             aria-pressed={selectedPlatforms.has(p.key)}
-            className={`flex items-center gap-1 h-7 px-2.5 rounded-full text-xs font-medium transition-all duration-150 ${
+            className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-sm font-medium transition-all duration-150 ${
               selectedPlatforms.has(p.key)
                 ? 'bg-[#E8F0FE] text-[#1A73E8] border border-[#1A73E8]'
                 : 'bg-[#F1F3F4] text-[#5F6368] border border-transparent hover:border-[#DADCE0]'
@@ -316,6 +318,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onAddToMaterials }) =>
               onToggle={() =>
                 setExpandedHistoryId(prev => prev === entry.id ? null : entry.id)
               }
+              onAddToMaterials={onAddToMaterials}
             />
           ))}
         </div>

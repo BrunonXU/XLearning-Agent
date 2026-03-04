@@ -25,21 +25,21 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
 
   return (
     <div
-      className="relative rounded-xl border border-[#DADCE0] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 cursor-pointer overflow-hidden group bg-white"
+      className="relative rounded-3xl border border-black/5 shadow-soft hover:shadow-md hover:-translate-y-1 transition-all duration-200 cursor-pointer overflow-hidden group bg-white"
       onClick={() => navigate(`/workspace/${plan.id}`)}
     >
       {/* 封面色块 */}
       <div
-        className="h-[110px] flex items-center justify-center"
+        className="h-[120px] flex items-center justify-center"
         style={{ backgroundColor: coverColor }}
       >
-        <span className="text-5xl opacity-60">{coverIcon}</span>
+        <span className="text-6xl opacity-60">{coverIcon}</span>
       </div>
 
       {/* 信息区 */}
-      <div className="px-3 py-3">
-        <p className="text-sm font-semibold text-[#202124] truncate mb-1">{plan.title}</p>
-        <p className="text-xs text-[#5F6368]">
+      <div className="px-5 py-4">
+        <p className="text-base font-semibold text-[#202124] truncate mb-1">{plan.title}</p>
+        <p className="text-sm text-[#5F6368]">
           {plan.sourceCount} 个来源 · {formatDate(plan.lastAccessedAt)}
         </p>
       </div>
@@ -47,7 +47,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
       {/* 三点菜单 */}
       <button
         aria-label="更多操作"
-        className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 shadow-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:bg-white text-[#5F6368]"
+        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 shadow-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:bg-white text-[#5F6368]"
         onClick={e => { e.stopPropagation(); setMenuOpen(m => !m) }}
       >
         ⋮
@@ -55,7 +55,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
 
       {menuOpen && (
         <div
-          className="absolute top-11 right-2 bg-white rounded-xl shadow-xl border border-[#DADCE0] z-10 py-1 min-w-[110px]"
+          className="absolute top-12 right-3 bg-white rounded-xl shadow-xl border border-[#DADCE0] z-10 py-1 min-w-[110px]"
           onClick={e => e.stopPropagation()}
         >
           {[

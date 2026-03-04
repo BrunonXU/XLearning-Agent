@@ -1,25 +1,21 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import type { Material, SearchResult, PlatformType } from '../types'
 
 type PlatformStatus = 'idle' | 'searching' | 'done' | 'timeout' | 'error'
 
-interface PlanSourceData {
+interface SourceStore {
   materials: Material[]
-}
-
-interface SourceStore extends PlanSourceData {
-  _cache: Record<string, PlanSourceData>
-  _activePlanId: string
   searchResults: SearchResult[]
   platformSearchStatus: Record<PlatformType, PlatformStatus>
   isSearching: boolean
   searchQuery: string
+  loading: boolean
 
-  setActivePlan: (planId: string) => void
+  loadMaterials: (planId: string) => Promise<void>
   addMaterial: (m: Material) => void
   setMaterials: (mats: Material[]) => void
   removeMaterial: (id: string) => void
+  updateMaterial: (id: string, updates: Partial<Material>) => void
   updateMaterialStatus: (id: string, status: Material['status']) => void
   setSearchResults: (results: SearchResult[]) => void
   setPlatformStatus: (platform: PlatformType, status: PlatformStatus) => void
@@ -37,72 +33,59 @@ const DEFAULT_PLATFORM_STATUS: Record<PlatformType, PlatformStatus> = {
   other: 'idle',
 }
 
-const emptySource: PlanSourceData = { materials: [] }
+export const useSourceStore = create<SourceStore>()((set) => ({
+  materials: [],
+  searchResults: [],
+  platformSearchStatus: { ...DEFAULT_PLATFORM_STATUS },
+  isSearching: false,
+  searchQuery: '',
+  loading: false,
 
-function snapshot(s: SourceStore): PlanSourceData {
-  return { materials: s.materials }
-}
+  loadMaterials: async (planId: string) => {
+    set({ loading: true })
+    try {
+      const res = await fetch(`/api/plans/${planId}/materials`)
+      if (!res.ok) throw new Error('加载失败')
+      const data = await res.json()
+      set({ materials: data, loading: false })
+    } catch {
+      set({ loading: false })
+    }
+  },
 
-export const useSourceStore = create<SourceStore>()(
-  persist(
-    (set) => ({
-      ...emptySource,
-      _cache: {},
-      _activePlanId: '',
+  addMaterial: (m) =>
+    set((s) => ({ materials: [...s.materials, m] })),
+
+  setMaterials: (mats) => set({ materials: mats }),
+
+  removeMaterial: (id) =>
+    set((s) => ({ materials: s.materials.filter((m) => m.id !== id) })),
+
+  updateMaterial: (id, updates) =>
+    set((s) => ({
+      materials: s.materials.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+    })),
+
+  updateMaterialStatus: (id, status) =>
+    set((s) => ({
+      materials: s.materials.map((m) => (m.id === id ? { ...m, status } : m)),
+    })),
+
+  setSearchResults: (results) => set({ searchResults: results }),
+
+  setPlatformStatus: (platform, status) =>
+    set((s) => ({
+      platformSearchStatus: { ...s.platformSearchStatus, [platform]: status },
+    })),
+
+  setSearching: (v) => set({ isSearching: v }),
+  setSearchQuery: (q) => set({ searchQuery: q }),
+
+  clearSearch: () =>
+    set({
       searchResults: [],
       platformSearchStatus: { ...DEFAULT_PLATFORM_STATUS },
       isSearching: false,
       searchQuery: '',
-
-      setActivePlan: (planId) => set((s) => {
-        const cache = { ...s._cache }
-        if (s._activePlanId) cache[s._activePlanId] = snapshot(s as unknown as SourceStore)
-        const restored = cache[planId] || emptySource
-        return { ...restored, _cache: cache, _activePlanId: planId }
-      }),
-
-      addMaterial: (m) =>
-        set((s) => ({ materials: [...s.materials, m] })),
-
-      setMaterials: (mats) => set({ materials: mats }),
-
-      removeMaterial: (id) =>
-        set((s) => ({ materials: s.materials.filter((m) => m.id !== id) })),
-
-      updateMaterialStatus: (id, status) =>
-        set((s) => ({
-          materials: s.materials.map((m) => (m.id === id ? { ...m, status } : m)),
-        })),
-
-      setSearchResults: (results) => set({ searchResults: results }),
-
-      setPlatformStatus: (platform, status) =>
-        set((s) => ({
-          platformSearchStatus: { ...s.platformSearchStatus, [platform]: status },
-        })),
-
-      setSearching: (v) => set({ isSearching: v }),
-      setSearchQuery: (q) => set({ searchQuery: q }),
-
-      clearSearch: () =>
-        set({
-          searchResults: [],
-          platformSearchStatus: { ...DEFAULT_PLATFORM_STATUS },
-          isSearching: false,
-          searchQuery: '',
-        }),
     }),
-    {
-      name: 'source-store',
-      partialize: (s) => ({
-        _cache: (() => {
-          const cache = { ...s._cache }
-          if (s._activePlanId) cache[s._activePlanId] = snapshot(s as unknown as SourceStore)
-          return cache
-        })(),
-        _activePlanId: s._activePlanId,
-        materials: s.materials,
-      }),
-    }
-  )
-)
+}))

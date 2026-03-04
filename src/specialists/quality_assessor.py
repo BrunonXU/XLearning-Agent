@@ -81,8 +81,10 @@ class QualityAssessor:
                 response = self._llm.simple_chat(
                     prompt,
                     system_prompt=(
-                        "你是一个学习资源质量评估专家。请根据提供的多条资源信息，"
-                        "逐条评估内容质量，判断是否为行业内有效文章（而非广告、水文或纯引流内容）。"
+                        "你是一个学习资源评估专家，服务于一个智能学习规划平台。"
+                        "平台的用户是想学习某个领域知识的人，系统帮他们搜索高质量资源并制定学习规划。"
+                        "你的任务是从学习者视角评估资源，提取对学习者真正有用的知识点和可操作建议。"
+                        "忽略作者自我介绍、引流话术、关注点赞等无关内容。"
                         "严格按照指定的 JSON 格式输出。"
                     ),
                 )
@@ -147,7 +149,7 @@ class QualityAssessor:
                 entry_lines.append(f"- 正文（短文，直接作为摘要）: {content}")
                 entry_lines.append("- 注意: 正文较短，无需生成 content_summary，将直接使用原文")
             else:
-                entry_lines.append(f"- 正文（前 500 字）: {content[:500]}")
+                entry_lines.append(f"- 正文（前 1500 字）: {content[:1500]}")
 
             entry_lines.append(f"- 评论区精选:\n{comments_text}")
 
@@ -162,7 +164,7 @@ class QualityAssessor:
 
         items_block = "\n\n".join(entries)
 
-        prompt = f"""请逐条评估以下 {len(items)} 条学习资源的质量。
+        prompt = f"""请逐条评估以下 {len(items)} 条学习资源的质量，从学习者视角提取有用信息。
 
 {items_block}
 
@@ -171,12 +173,30 @@ class QualityAssessor:
 [
   {{
     "quality_score": 7.5,
-    "recommendation_reason": "推荐理由（≤50字）",
-    "content_summary": "内容摘要（≤150字，若条目标注'正文较短'则填空字符串）",
-    "comment_summary": "评论结论摘要（≤100字，总结评论区主要观点和情感倾向）"
+    "recommendation_reason": "推荐理由（≤50字，说明对学习者的价值）",
+    "content_summary": "信息整理（≤400字）",
+    "comment_summary": "评论结论摘要（≤100字，总结评论区对学习者有价值的观点）"
   }}
 ]
 ```
+
+content_summary 要求（最重要的字段，在前端显示为"信息整理"）：
+- 目标：让学习者不看原文就能知道"这篇资源能帮我学到什么"
+- 完全忽略作者自我介绍、引流话术、"点赞关注"等废话，只提取知识干货
+- 字数要求：尽量详细，最多400字，宁可多写也不要遗漏关键信息
+- 格式要求：
+  1. 第一行：一句话说明这篇资源的核心价值（对学习者来说）
+  2. 后续用「→」分隔列出具体的知识点、学习路线、工具推荐、或可操作建议
+  3. 如果提到了具体的项目/工具/链接，必须列出名称
+- 不同类型资源的提取重点：
+  - 学习路线/攻略类：提取完整路线步骤和推荐资源名称
+  - 教程类：列出教的核心技术点和前置知识
+  - 经验分享类：提取关键结论和可操作建议
+  - 项目介绍类：列出技术栈、核心功能、适合什么水平的学习者
+  - 论文/深度文章类：提取核心论点和方法论
+- 示例（学习路线类）：「AI应用开发学习路线（面向校招） → 前提：扎实后端基本功 → 入门LLM：llm_interview_note前两章 → 实战项目：字节deer-flow + LangGraph框架 → 必学协议：MCP和AG-UI → RAG：rag-from-scratch开源项目 → 提示词工程：LangGPT → 微调：了解概念即可，推荐deeplearning.ai短课」
+- 若条目标注"正文较短"则填空字符串
+
 数组长度必须等于 {len(items)}，顺序与条目一一对应。
 quality_score 范围 1-10，整数或一位小数。"""
 
@@ -222,7 +242,7 @@ quality_score 范围 1-10，整数或一位小数。"""
                 if len(content) < 50:
                     summary = content
                 else:
-                    summary = str(entry.get("content_summary", ""))[:150]
+                    summary = str(entry.get("content_summary", ""))[:400]
 
                 comment_summary = str(entry.get("comment_summary", ""))[:100]
 

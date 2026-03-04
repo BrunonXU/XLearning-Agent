@@ -6,8 +6,14 @@ PUT  /api/plan/day/{day_id}/complete — 标记 Day 完成（幂等）
 """
 
 import logging
+import time
+import uuid
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from backend import database
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["studio"])
@@ -70,6 +76,8 @@ async def generate_studio_content(content_type: str, plan_id: str = ""):
 
     prompt = _PROMPTS[content_type]
     title = _TITLES[content_type]
+    t_start = time.perf_counter()
+    status = "ok"
 
     try:
         from backend.session_context import get_session
@@ -78,6 +86,43 @@ async def generate_studio_content(content_type: str, plan_id: str = ""):
     except Exception as e:
         logger.warning(f"[studio] TutorAgent failed for {content_type}: {e}")
         content = _fallback_content(content_type)
+        status = "error"
+
+    duration_ms = round((time.perf_counter() - t_start) * 1000, 1)
+
+    # Record trace for DEV panel
+    try:
+        from backend.routers.dev import record_trace
+        record_trace({
+            "id": str(uuid.uuid4()),
+            "type": "tool",
+            "name": f"Studio.{content_type}",
+            "startTime": datetime.now(timezone.utc).isoformat(),
+            "duration": duration_ms,
+            "status": status,
+            "input": prompt[:200],
+            "output": content[:200],
+            "tokens": {"prompt": 0, "completion": 0, "total": 0},
+            "metadata": {"planId": plan_id, "contentType": content_type},
+        })
+    except Exception:
+        pass
+
+    # Persist generated content to database
+    if plan_id:
+        content_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            database.insert_generated_content({
+                "id": content_id,
+                "planId": plan_id,
+                "type": content_type,
+                "title": title,
+                "content": content,
+                "createdAt": now,
+            })
+        except Exception as e:
+            logger.warning(f"[studio] Failed to persist generated content: {e}")
 
     return StudioResponse(type=content_type, title=title, content=content)
 

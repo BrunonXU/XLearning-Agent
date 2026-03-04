@@ -22,23 +22,16 @@ const COVER_COLORS = [
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate()
-  const { plans, setPlans, addPlan, updatePlan, deletePlan } = usePlanStore()
+  const { plans, loading: isLoading, addPlan, updatePlan, deletePlan, loadPlans } = usePlanStore()
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [filterTab, setFilterTab] = useState<FilterTab>('all')
   const [modalOpen, setModalOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
 
-  // 10.1: 从后端加载规划列表
+  // 从后端加载规划列表
   useEffect(() => {
-    fetch('/api/plans')
-      .then(r => r.ok ? r.json() : [])
-      .then((data: LearningPlan[]) => {
-        if (data.length > 0) setPlans(data)
-      })
-      .catch(() => { /* 使用 store 中的缓存数据 */ })
-      .finally(() => setIsLoading(false))
+    loadPlans()
   }, [])
 
   // 10.3: 新建规划
@@ -109,7 +102,7 @@ const HomePage: React.FC = () => {
   )
 
   return (
-    <div className="min-h-screen bg-white dark:bg-dark-bg">
+    <div className="min-h-screen bg-[#F0F4F9] dark:bg-dark-bg">
       {/* 顶部导航 */}
       <header className="h-14 border-b border-[#DADCE0] dark:border-dark-border flex items-center px-6 justify-between bg-white dark:bg-dark-bg">
         <div className="flex items-center gap-2">
@@ -135,11 +128,10 @@ const HomePage: React.FC = () => {
               <button
                 key={tab}
                 onClick={() => setFilterTab(tab)}
-                className={`px-4 py-2 text-sm transition-all duration-150 ${
-                  filterTab === tab
-                    ? 'border-b-2 border-[#1A73E8] text-[#1A73E8] font-medium'
-                    : 'text-[#5F6368] hover:text-[#202124]'
-                }`}
+                className={`px-4 py-2 text-sm transition-all duration-150 ${filterTab === tab
+                  ? 'border-b-2 border-[#1A73E8] text-[#1A73E8] font-medium'
+                  : 'text-[#5F6368] hover:text-[#202124]'
+                  }`}
               >
                 {tab === 'all' ? '全部' : '精选笔记本'}
               </button>

@@ -30,7 +30,7 @@ export const FeaturedPlans: React.FC = () => {
         {FEATURED.map((plan, i) => (
           <div
             key={plan.id}
-            className="flex-shrink-0 w-[220px] rounded-xl overflow-hidden border border-[#DADCE0] hover:shadow-lg transition-all duration-150 cursor-pointer group"
+            className="flex-shrink-0 w-[240px] rounded-3xl overflow-hidden border border-black/5 shadow-soft hover:shadow-md hover:-translate-y-1 transition-all duration-200 cursor-pointer group bg-white"
             onClick={() => navigate(`/workspace/${plan.id}`)}
           >
             {/* 渐变封面 */}
@@ -40,14 +40,14 @@ export const FeaturedPlans: React.FC = () => {
               </span>
             </div>
             {/* 信息区 */}
-            <div className="bg-white px-3 py-2.5 flex items-center justify-between">
+            <div className="bg-white px-5 py-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-[#5F6368]">{plan.sourceCount} 个来源</p>
-                <p className="text-xs text-[#9AA0A6]">
+                <p className="text-sm font-medium text-[#5F6368] mb-0.5">{plan.sourceCount} 个来源</p>
+                <p className="text-sm text-[#9AA0A6]">
                   {new Date(plan.lastAccessedAt).toLocaleDateString('zh-CN')}
                 </p>
               </div>
-              <span className="text-[#9AA0A6] text-sm">🌐</span>
+              <span className="text-[#9AA0A6] text-lg">🌐</span>
             </div>
           </div>
         ))}

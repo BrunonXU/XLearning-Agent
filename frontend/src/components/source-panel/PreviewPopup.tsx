@@ -3,7 +3,7 @@
  *
  * 功能：
  * - 展示搜索结果的完整详情：标题、URL、平台标识、AI 摘要、评论结论、
- *   图片缩略图网格、互动指标、评分、推荐理由
+ *   图片翻页轮播、高赞评论、评分、推荐理由
  * - 操作按钮：查看完整信息（新标签页）、刷新、关闭
  * - 键盘支持：Escape 关闭
  * - 刷新流程：骨架屏 → 成功更新 / 失败提示+重试
@@ -36,13 +36,11 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
   const [result, setResult] = useState<SearchResult>(initialResult)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState('')
+  const [imageIndex, setImageIndex] = useState(0)
 
-  // Sync with prop changes
-  useEffect(() => {
-    setResult(initialResult)
-  }, [initialResult])
+  useEffect(() => { setResult(initialResult) }, [initialResult])
+  useEffect(() => { setImageIndex(0) }, [initialResult])
 
-  // Escape key closes popup
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -60,9 +58,7 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: result.url, platform: result.platform }),
       })
-      if (!res.ok) {
-        throw new Error(`刷新失败 (${res.status})`)
-      }
+      if (!res.ok) throw new Error(`刷新失败 (${res.status})`)
       const data = await res.json()
       setResult((prev) => ({
         ...prev,
@@ -72,6 +68,7 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
         engagementMetrics: data.engagementMetrics ?? prev.engagementMetrics,
         qualityScore: data.qualityScore ?? prev.qualityScore,
         recommendationReason: data.recommendationReason ?? prev.recommendationReason,
+        topComments: data.topComments ?? prev.topComments,
       }))
       onRefresh()
     } catch (err: any) {
@@ -84,33 +81,38 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
   const platform = PLATFORM_LABELS[result.platform] ?? PLATFORM_LABELS.other
   const score = (result.qualityScore * 10).toFixed(1)
   const metrics = result.engagementMetrics ?? {}
-  const images = (result.imageUrls ?? []).slice(0, 9)
+  const images = (result.imageUrls ?? []).slice(0, 20)
+  const comments = result.topComments ?? []
+
+  // 过滤掉 author/share_count 等无意义指标，只保留核心互动数据
+  const coreMetrics: { icon: string; label: string; value: number }[] = []
+  if (metrics.likes != null) coreMetrics.push({ icon: '👍', label: '点赞', value: metrics.likes })
+  if (metrics.collected != null) coreMetrics.push({ icon: '⭐', label: '收藏', value: metrics.collected })
+  if (metrics.comments_count != null || metrics.comments != null)
+    coreMetrics.push({ icon: '💬', label: '评论', value: metrics.comments_count ?? metrics.comments ?? 0 })
 
   return (
     <div
-      className="absolute inset-0 z-50 flex flex-col bg-surface rounded-xl border border-border shadow-lg overflow-hidden"
+      className="absolute inset-0 z-50 flex flex-col bg-white dark:bg-dark-surface rounded-xl border border-[#DADCE0] dark:border-dark-border shadow-lg overflow-hidden"
       role="dialog"
       aria-label={`预览: ${result.title}`}
       aria-modal="true"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-secondary">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#DADCE0] dark:border-dark-border bg-[#F8F9FA] dark:bg-dark-surface-secondary">
         <div className="flex items-center gap-2 min-w-0">
-          <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary-light text-primary"
-            data-testid="platform-badge"
-          >
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#E8F0FE] text-[#1A73E8]">
             <span aria-hidden="true">{platform.icon}</span>
             {platform.name}
           </span>
-          <h2 className="text-base font-semibold text-text-primary truncate">
+          <h2 className="text-base font-semibold text-[#202124] dark:text-dark-text truncate">
             {result.title}
           </h2>
         </div>
         <button
           onClick={onClose}
           aria-label="关闭预览"
-          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:bg-surface-tertiary hover:text-text-primary transition-colors"
+          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#5F6368] hover:bg-[#E8EAED] hover:text-[#202124] transition-colors"
         >
           ✕
         </button>
@@ -127,157 +129,119 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
               href={result.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="block text-xs text-primary hover:underline truncate"
-              data-testid="result-url"
+              className="block text-xs text-[#1A73E8] hover:underline truncate"
             >
               {result.url}
             </a>
 
-            {/* Quality score + Recommendation reason */}
-            <div className="flex items-start gap-3">
-              <div
-                className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-accent-light"
-                data-testid="quality-score"
-              >
-                <span className="text-accent font-bold text-lg">⭐ {score}</span>
-                <span className="text-xs text-text-secondary">/10</span>
-              </div>
-              {result.recommendationReason && (
-                <p className="text-sm text-text-secondary leading-relaxed" data-testid="recommendation-reason">
-                  💡 {result.recommendationReason}
-                </p>
-              )}
+            {/* Score + core metrics inline */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-[#F9AB00] font-bold text-lg">⭐ {score}<span className="text-xs text-[#5F6368] font-normal">/10</span></span>
+              {coreMetrics.map(m => (
+                <span key={m.label} className="inline-flex items-center gap-1 text-sm text-[#5F6368]">
+                  <span>{m.icon}</span>
+                  <span>{formatNumber(m.value)}</span>
+                </span>
+              ))}
             </div>
 
-            {/* AI Content Summary */}
+            {/* Recommendation reason */}
+            {result.recommendationReason && (
+              <p className="text-sm text-[#5F6368] leading-relaxed">
+                💡 {result.recommendationReason}
+              </p>
+            )}
+
+            {/* AI Content Summary → 信息整理 */}
             {result.contentSummary && (
-              <section data-testid="content-summary">
-                <h3 className="text-sm font-medium text-text-primary mb-1">📝 内容摘要</h3>
-                <p className="text-sm text-text-secondary leading-relaxed bg-surface-secondary rounded-lg p-3">
+              <section>
+                <h3 className="text-sm font-medium text-[#202124] dark:text-dark-text mb-1">📋 信息整理</h3>
+                <p className="text-sm text-[#5F6368] leading-relaxed bg-[#F8F9FA] dark:bg-dark-surface-secondary rounded-lg p-3 whitespace-pre-line">
                   {result.contentSummary}
                 </p>
               </section>
             )}
 
-            {/* Comment Summary */}
-            {result.commentSummary && (
-              <section data-testid="comment-summary">
-                <h3 className="text-sm font-medium text-text-primary mb-1">💬 评论结论</h3>
-                <p className="text-sm text-text-secondary leading-relaxed bg-surface-secondary rounded-lg p-3">
-                  {result.commentSummary}
-                </p>
+            {/* Image carousel */}
+            {images.length > 0 && (
+              <section>
+                <h3 className="text-sm font-medium text-[#202124] dark:text-dark-text mb-2">🖼️ 图片 ({imageIndex + 1}/{images.length})</h3>
+                <div className="relative rounded-lg overflow-hidden border border-[#DADCE0] dark:border-dark-border bg-[#F8F9FA]">
+                  <a href={images[imageIndex]} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={images[imageIndex]}
+                      alt={`图片 ${imageIndex + 1}`}
+                      className="w-full max-h-[400px] object-contain"
+                      loading="lazy"
+                    />
+                  </a>
+                  {images.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setImageIndex(i => (i - 1 + images.length) % images.length)}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors"
+                        aria-label="上一张"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        onClick={() => setImageIndex(i => (i + 1) % images.length)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors"
+                        aria-label="下一张"
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
+                </div>
               </section>
             )}
 
-            {/* Image Thumbnail Grid */}
-            {images.length > 0 && (
-              <section data-testid="image-grid">
-                <h3 className="text-sm font-medium text-text-primary mb-2">🖼️ 图片</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {images.map((url, idx) => (
-                    <a
-                      key={idx}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="aspect-square rounded-lg overflow-hidden border border-border hover:border-primary transition-colors"
-                      aria-label={`查看大图 ${idx + 1}`}
-                    >
-                      <img
-                        src={url}
-                        alt={`图片 ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    </a>
+            {/* Top comments — 放在图片下面 */}
+            {comments.length > 0 && (
+              <section>
+                <h3 className="text-sm font-medium text-[#202124] dark:text-dark-text mb-2">🔥 高赞评论</h3>
+                <div className="flex flex-col gap-2">
+                  {comments.map((text, idx) => (
+                    <div key={idx} className="text-sm text-[#3C4043] bg-[#F8F9FA] dark:bg-dark-surface-secondary rounded-lg px-3 py-2 leading-relaxed">
+                      {text}
+                    </div>
                   ))}
                 </div>
               </section>
             )}
 
-            {/* Engagement Metrics */}
-            {Object.keys(metrics).length > 0 && (
-              <section data-testid="engagement-metrics">
-                <h3 className="text-sm font-medium text-text-primary mb-2">📊 互动指标</h3>
-                <div className="flex flex-wrap gap-3">
-                  {metrics.likes != null && (
-                    <MetricBadge icon="👍" label="点赞" value={metrics.likes} />
-                  )}
-                  {metrics.collects != null && (
-                    <MetricBadge icon="⭐" label="收藏" value={metrics.collects} />
-                  )}
-                  {metrics.comments != null && (
-                    <MetricBadge icon="💬" label="评论" value={metrics.comments} />
-                  )}
-                  {/* Render any other metrics */}
-                  {Object.entries(metrics)
-                    .filter(([k]) => !['likes', 'collects', 'comments'].includes(k))
-                    .map(([key, val]) => (
-                      <MetricBadge key={key} icon="📈" label={key} value={val} />
-                    ))}
-                </div>
+            {/* Comment summary */}
+            {result.commentSummary && (
+              <section>
+                <h3 className="text-sm font-medium text-[#202124] dark:text-dark-text mb-1">💬 评论结论</h3>
+                <p className="text-sm text-[#5F6368] leading-relaxed bg-[#F8F9FA] dark:bg-dark-surface-secondary rounded-lg p-3">
+                  {result.commentSummary}
+                </p>
               </section>
             )}
 
             {/* Refresh error */}
             {refreshError && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200" data-testid="refresh-error">
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200">
                 <span className="text-sm text-red-600">{refreshError}</span>
-                <button
-                  onClick={handleRefresh}
-                  className="text-sm text-primary hover:underline font-medium"
-                >
-                  重试
-                </button>
+                <button onClick={handleRefresh} className="text-sm text-[#1A73E8] hover:underline font-medium">重试</button>
               </div>
             )}
           </>
         )}
       </div>
 
-      {/* Footer actions */}
-      <div className="flex items-center gap-2 px-4 py-3 border-t border-border bg-surface-secondary">
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => window.open(result.url, '_blank')}
-        >
-          查看完整信息
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={refreshing}
-          onClick={handleRefresh}
-        >
-          刷新
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-        >
-          关闭
-        </Button>
+      {/* Footer */}
+      <div className="flex items-center gap-2 px-4 py-3 border-t border-[#DADCE0] dark:border-dark-border bg-[#F8F9FA] dark:bg-dark-surface-secondary">
+        <Button variant="primary" size="sm" onClick={() => window.open(result.url, '_blank')}>查看完整信息</Button>
+        <Button variant="secondary" size="sm" loading={refreshing} onClick={handleRefresh}>刷新</Button>
+        <Button variant="ghost" size="sm" onClick={onClose}>关闭</Button>
       </div>
     </div>
   )
 }
 
-/** Metric badge for engagement data */
-const MetricBadge: React.FC<{ icon: string; label: string; value: any }> = ({
-  icon,
-  label,
-  value,
-}) => (
-  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-tertiary text-sm text-text-secondary">
-    <span aria-hidden="true">{icon}</span>
-    <span>{label}</span>
-    <span className="font-medium text-text-primary">{formatNumber(value)}</span>
-  </span>
-)
-
-/** Format large numbers (e.g. 12345 → 1.2万) */
 function formatNumber(n: any): string {
   const num = Number(n)
   if (isNaN(num)) return String(n)
@@ -285,31 +249,22 @@ function formatNumber(n: any): string {
   return String(num)
 }
 
-/** Skeleton loading state during refresh */
 const SkeletonContent: React.FC = () => (
   <div className="space-y-4 animate-pulse" data-testid="skeleton">
-    <div className="h-4 bg-surface-tertiary rounded w-3/4" />
+    <div className="h-4 bg-[#E8EAED] rounded w-3/4" />
     <div className="flex gap-3">
-      <div className="h-10 w-20 bg-surface-tertiary rounded-lg" />
-      <div className="flex-1 h-10 bg-surface-tertiary rounded-lg" />
+      <div className="h-10 w-20 bg-[#E8EAED] rounded-lg" />
+      <div className="flex-1 h-10 bg-[#E8EAED] rounded-lg" />
     </div>
     <div className="space-y-2">
-      <div className="h-3 bg-surface-tertiary rounded w-1/4" />
-      <div className="h-20 bg-surface-tertiary rounded-lg" />
+      <div className="h-3 bg-[#E8EAED] rounded w-1/4" />
+      <div className="h-20 bg-[#E8EAED] rounded-lg" />
     </div>
+    <div className="h-48 bg-[#E8EAED] rounded-lg" />
     <div className="space-y-2">
-      <div className="h-3 bg-surface-tertiary rounded w-1/4" />
-      <div className="h-16 bg-surface-tertiary rounded-lg" />
-    </div>
-    <div className="grid grid-cols-3 gap-2">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="aspect-square bg-surface-tertiary rounded-lg" />
-      ))}
-    </div>
-    <div className="flex gap-3">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="h-8 w-16 bg-surface-tertiary rounded-lg" />
-      ))}
+      <div className="h-3 bg-[#E8EAED] rounded w-1/4" />
+      <div className="h-12 bg-[#E8EAED] rounded-lg" />
+      <div className="h-12 bg-[#E8EAED] rounded-lg" />
     </div>
   </div>
 )

@@ -40,18 +40,15 @@ const config: Config = {
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
-      fontSize: {
-        xs:   ['12px', { lineHeight: '16px' }],
-        sm:   ['13px', { lineHeight: '20px' }],
-        base: ['14px', { lineHeight: '22px' }],
-        md:   ['15px', { lineHeight: '24px' }],
-        lg:   ['16px', { lineHeight: '24px' }],
-        xl:   ['18px', { lineHeight: '28px' }],
+      // Removed custom fontSize to use Tailwind defaults (which are larger and more readable)
+      boxShadow: {
+        'soft': '0 4px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 8px -2px rgba(0, 0, 0, 0.02)',
       },
       borderRadius: {
         lg: '8px',
         xl: '12px',
         '2xl': '16px',
+        '3xl': '24px', // Added for the NotebookLM look
       },
       transitionDuration: {
         DEFAULT: '150ms',

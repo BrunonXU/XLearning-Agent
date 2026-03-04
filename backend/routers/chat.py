@@ -8,11 +8,16 @@ POST /api/chat/sync — 普通 HTTP 降级端点（SSE 失败时使用）
 import asyncio
 import json
 import logging
+import time
+import uuid
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from backend import database
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -36,10 +41,28 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict]):
     from backend.session_context import get_session
 
     logger.info(f"[chat] ▶ plan={plan_id!r} message={message[:80]!r} history_len={len(history)}")
+
+    # Persist user message BEFORE starting the stream
+    user_msg = {
+        "id": str(uuid.uuid4()),
+        "planId": plan_id,
+        "role": "user",
+        "content": message,
+        "sources": [],
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        database.insert_message(user_msg)
+    except Exception as e:
+        logger.warning(f"[chat] Failed to persist user message: {e}")
+
     ctx = get_session(plan_id)
     truncated = _truncate_history(history)
 
     chunk_count = 0
+    full_response = ""
+    src_payload = []
+    t_start = time.perf_counter()
     try:
         for chunk in ctx.tutor.stream_response(
             user_input=message,
@@ -47,6 +70,7 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict]):
         ):
             if chunk:
                 chunk_count += 1
+                full_response += chunk
                 data = json.dumps({"type": "chunk", "content": chunk}, ensure_ascii=False)
                 yield f"data: {data}\n\n"
                 await asyncio.sleep(0)  # 让出事件循环，保证 SSE 实时推送
@@ -77,7 +101,48 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict]):
         yield f"data: {err_data}\n\n"
 
     finally:
-        logger.info(f"[chat] ✓ plan={plan_id!r} chunks={chunk_count}")
+        t_end = time.perf_counter()
+        duration_ms = round((t_end - t_start) * 1000, 1)
+
+        # Persist assistant message after stream completes
+        if full_response:
+            assistant_msg = {
+                "id": str(uuid.uuid4()),
+                "planId": plan_id,
+                "role": "assistant",
+                "content": full_response,
+                "sources": src_payload,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+            }
+            try:
+                database.insert_message(assistant_msg)
+            except Exception as e:
+                logger.warning(f"[chat] Failed to persist assistant message: {e}")
+
+        # Record trace for DEV panel
+        try:
+            from backend.routers.dev import record_trace
+            record_trace({
+                "id": str(uuid.uuid4()),
+                "type": "chain",
+                "name": "TutorAgent.stream_response",
+                "startTime": datetime.now(timezone.utc).isoformat(),
+                "duration": duration_ms,
+                "status": "ok" if full_response else "error",
+                "input": message[:200],
+                "output": full_response[:200] if full_response else "",
+                "tokens": {"prompt": 0, "completion": 0, "total": 0},
+                "metadata": {
+                    "planId": plan_id,
+                    "chunks": chunk_count,
+                    "historyLen": len(history),
+                    "hasSources": bool(src_payload),
+                },
+            })
+        except Exception:
+            pass
+
+        logger.info(f"[chat] ✓ plan={plan_id!r} chunks={chunk_count} duration={duration_ms}ms")
         done_data = json.dumps({"type": "done", "chunkCount": chunk_count}, ensure_ascii=False)
         yield f"data: {done_data}\n\n"
 

@@ -67,7 +67,7 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ planId }) => {
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`flex flex-col items-center justify-center gap-2 h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-150 ${
+        className={`flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-150 ${
           dragging
             ? 'border-[#1A73E8] bg-[#E8F0FE]'
             : 'border-[#DADCE0] hover:border-[#1A73E8] hover:bg-[#F8F9FA]'
@@ -75,7 +75,7 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ planId }) => {
         role="button"
         aria-label="点击或拖拽上传文件（PDF、MD、TXT）"
       >
-        <span className="text-2xl">{uploading ? '⏳' : '📄'}</span>
+        <span className="text-3xl">{uploading ? '⏳' : '📄'}</span>
         <p className="text-sm text-[#5F6368] text-center leading-tight">
           {uploading ? '上传中...' : '拖拽文件到此处\n或点击选择（PDF / MD / TXT）'}
         </p>
@@ -91,20 +91,20 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ planId }) => {
       </div>
 
       {/* URL 输入 */}
-      <div className="flex gap-1.5">
+      <div className="flex gap-2">
         <input
           value={urlInput}
           onChange={e => setUrlInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleUrlSubmit()}
           placeholder="粘贴 GitHub / 网页 URL..."
-          className="flex-1 h-9 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
+          className="flex-1 h-10 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
           aria-label="粘贴 URL"
         />
         <button
           onClick={handleUrlSubmit}
           disabled={!urlInput.trim() || uploading}
           aria-label="添加 URL"
-          className="h-9 px-3 bg-[#1A73E8] text-white rounded-lg text-sm hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150"
+          className="h-10 px-4 bg-[#1A73E8] text-white rounded-lg text-sm hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150"
         >
           添加
         </button>

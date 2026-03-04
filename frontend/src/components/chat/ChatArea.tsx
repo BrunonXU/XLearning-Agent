@@ -28,15 +28,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between px-6 pt-6 pb-3 border-b border-[#E0E0E0] flex-shrink-0">
+        <span className="text-base font-semibold text-[#202124] dark:text-dark-text">对话</span>
+      </div>
+
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-8 py-6">
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-8 pb-6">
         <MessageList messages={messages} isStreaming={isStreaming && !streamingContent} />
 
         {/* 流式输出气泡 */}
         {isStreaming && streamingContent && (
           <div className="flex flex-col gap-2 max-w-[85%] mt-6">
-            <div className="bg-[#F8F9FA] rounded-2xl rounded-tl-sm px-5 py-4 shadow-sm">
-              <div className="prose prose-sm max-w-none text-[#202124] prose-p:my-1 prose-headings:my-2 prose-li:my-0.5 prose-code:bg-[#F1F3F4] prose-code:px-1 prose-code:rounded">
+            <div className="bg-[#F8F9FA] rounded-2xl rounded-tl-sm px-6 py-5 shadow-sm">
+              <div className="prose max-w-none text-[#202124] prose-p:my-1.5 prose-headings:my-2.5 prose-li:my-0.5 prose-code:bg-[#F1F3F4] prose-code:px-1 prose-code:rounded">
                 <ReactMarkdown>{streamingContent}</ReactMarkdown>
                 <span className="inline-block w-0.5 h-[1em] bg-[#1A73E8] animate-pulse ml-0.5 align-middle" />
               </div>

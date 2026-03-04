@@ -429,6 +429,10 @@ class SearchOrchestrator:
             # 确保浏览器已启动
             if self._browser_agent._browser is None:
                 await self._browser_agent.launch(config)
+                # launch 失败时 _browser 仍为 None
+                if self._browser_agent._browser is None:
+                    logger.error(f"浏览器启动失败，无法搜索 {config.name}")
+                    return []
 
             results = await self._browser_agent.search_platform(query, config)
 

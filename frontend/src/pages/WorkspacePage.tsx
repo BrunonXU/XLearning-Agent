@@ -10,7 +10,7 @@ import { useChatStore } from '../store/chatStore'
 import { useSourceStore } from '../store/sourceStore'
 import { usePlanStore } from '../store/planStore'
 import { useStudioStore } from '../store/studioStore'
-import type { ChatMessage, Material } from '../types'
+import { useSearchStore } from '../store/searchStore'
 
 const WorkspacePage: React.FC = () => {
   const { planId } = useParams<{ planId: string }>()
@@ -24,6 +24,8 @@ const WorkspacePage: React.FC = () => {
   const { plans } = usePlanStore()
   const planTitle = plans.find(p => p.id === planId)?.title ?? '学习规划'
   const [isReading, setIsReading] = useState(false)
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false)
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false)
 
   const toggleDark = () => {
     setIsDark(d => {
@@ -34,54 +36,20 @@ const WorkspacePage: React.FC = () => {
     })
   }
 
-  // 12.1: 页面加载时恢复会话状态（localStorage 优先，后端兜底）
+  // 页面加载时从 API 并行加载所有数据
   useEffect(() => {
     if (!planId) { setIsRestoring(false); return }
-    // 三个 store 都切换到当前 planId（从 localStorage cache 恢复）
-    useStudioStore.getState().setActivePlan(planId)
-    useChatStore.getState().setActivePlan(planId)
-    useSourceStore.getState().setActivePlan(planId)
+    setIsRestoring(true)
 
-    // 如果 localStorage 已有数据，不再请求后端
-    const hasLocalMessages = useChatStore.getState().messages.length > 0
-    const hasLocalMaterials = useSourceStore.getState().materials.length > 0
-
-    if (hasLocalMessages && hasLocalMaterials) {
-      setIsRestoring(false)
-      return
-    }
-
-    // localStorage 没数据时尝试从后端恢复
-    fetch(`/api/session/${planId}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data) return
-        if (!hasLocalMessages && data.messages?.length > 0) {
-          const msgs: ChatMessage[] = data.messages.map((m: any) => ({
-            id: m.id ?? `restored-${Date.now()}-${Math.random()}`,
-            role: m.role,
-            content: m.content,
-            createdAt: m.createdAt ?? new Date().toISOString(),
-          }))
-          useChatStore.getState().setMessages(msgs)
-        }
-        if (!hasLocalMaterials && data.materials?.length > 0) {
-          const mats: Material[] = data.materials.map((m: any) => ({
-            id: m.id,
-            type: m.type ?? 'other',
-            name: m.name ?? m.filename ?? '未知材料',
-            url: m.url,
-            status: m.status ?? 'ready',
-            addedAt: m.addedAt ?? new Date().toISOString(),
-          }))
-          useSourceStore.getState().setMaterials(mats)
-        }
-      })
-      .catch(() => { /* 静默失败，使用 store 缓存 */ })
-      .finally(() => setIsRestoring(false))
+    Promise.all([
+      useChatStore.getState().loadMessages(planId),
+      useSourceStore.getState().loadMaterials(planId),
+      useStudioStore.getState().loadStudioData(planId),
+      useSearchStore.getState().loadHistory(planId),
+    ]).finally(() => setIsRestoring(false))
   }, [planId])
 
-  // 11.1: Ctrl+K 聚焦输入框
+  // Ctrl+K 聚焦输入框
   useKeyboard({
     onFocusInput: () => {
       const textarea = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="输入消息"]')
@@ -89,7 +57,7 @@ const WorkspacePage: React.FC = () => {
     },
   })
 
-  // 12.4: 加载骨架屏
+  // 加载骨架屏
   if (isRestoring) {
     return (
       <div className="flex flex-col h-screen bg-[#F8F9FA] dark:bg-dark-bg">
@@ -106,6 +74,8 @@ const WorkspacePage: React.FC = () => {
   return (
     <WorkspaceLayout
       isReading={isReading}
+      isLeftCollapsed={isLeftCollapsed}
+      isRightCollapsed={isRightCollapsed}
       topNav={
         <TopNav
           planTitle={planTitle}
@@ -116,9 +86,22 @@ const WorkspacePage: React.FC = () => {
           isDark={isDark}
         />
       }
-      left={<SourcePanel planId={planId} onReadingChange={setIsReading} />}
+      left={
+        <SourcePanel
+          planId={planId}
+          onReadingChange={setIsReading}
+          isCollapsed={isLeftCollapsed}
+          onToggleCollapse={() => setIsLeftCollapsed(!isLeftCollapsed)}
+        />
+      }
       center={<ChatArea planId={planId} />}
-      right={<StudioPanel planId={planId} />}
+      right={
+        <StudioPanel
+          planId={planId}
+          isCollapsed={isRightCollapsed}
+          onToggleCollapse={() => setIsRightCollapsed(!isRightCollapsed)}
+        />
+      }
     />
   )
 }

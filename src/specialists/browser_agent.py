@@ -93,8 +93,12 @@ class BrowserAgent:
     async def launch(self, config: PlatformConfig) -> None:
         """启动浏览器实例（带反检测配置），如需登录则加载 Cookie。
 
-        - 有 Cookie 且有效时最小化运行，用户不会被打扰
-        - 没有 Cookie 或 Cookie 失效时弹出浏览器让用户手动登录（最多等 3 分钟）
+        - 有 Cookie 且有效时窗口隐藏运行（offscreen），用户看不到
+        - 不需要登录的平台也隐藏运行
+        - 没有 Cookie 或 Cookie 失效时弹出可见浏览器让用户手动登录（最多等 3 分钟）
+        
+        注意：不使用 headless=True，因为小红书等平台会检测无头浏览器。
+        改用 headless=False + 窗口移到屏幕外的方式隐藏。
         """
         try:
             from playwright.async_api import async_playwright
@@ -105,15 +109,17 @@ class BrowserAgent:
                 cookie_path = Path(config.cookie_file)
                 has_cookie_file = cookie_path.exists()
 
-            # 有 cookie 就最小化，没有就正常显示让用户登录
-            headless_mode = has_cookie_file  # 有 cookie 先最小化尝试
+            # 是否需要用户可见（仅首次登录时）
+            needs_visible = (config.requires_login and config.cookie_file and not has_cookie_file)
+            hidden_mode = not needs_visible  # 有 cookie 或不需要登录 → 隐藏
             launch_args = ["--disable-blink-features=AutomationControlled"]
-            if headless_mode:
-                launch_args.append("--start-minimized")
+            if hidden_mode:
+                # 窗口移到屏幕外 + 最小化，用户完全看不到
+                launch_args.extend(["--window-position=-32000,-32000", "--window-size=1,1"])
 
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
-                headless=False,
+                headless=False,  # 始终 headless=False，避免被反爬检测
                 args=launch_args,
             )
 
@@ -150,8 +156,8 @@ class BrowserAgent:
                         await self._context.clear_cookies()
 
                 if need_login:
-                    # 如果当前是最小化模式，需要关闭重新以可见模式启动
-                    if headless_mode:
+                    # 如果当前是隐藏模式，需要关闭重新以可见模式启动
+                    if hidden_mode:
                         await self._browser.close()
                         self._browser = await self._playwright.chromium.launch(
                             headless=False,
@@ -408,8 +414,15 @@ class BrowserAgent:
         从拦截到的 JSON 中提取结构化数据。
         """
         if not self._context:
-            logger.error("浏览器未启动，无法搜索")
-            return []
+            # 尝试自动启动浏览器（可能是 close 后重新搜索的场景）
+            logger.warning("浏览器未启动，尝试自动启动...")
+            try:
+                await self.launch(config)
+            except Exception as e:
+                logger.error(f"自动启动浏览器失败: {e}")
+            if not self._context:
+                logger.error("浏览器启动失败，无法搜索")
+                return []
 
         await self._enforce_platform_interval(config.name)
 
@@ -486,8 +499,14 @@ class BrowserAgent:
     ) -> List[RawSearchResult]:
         """并行获取 top_k 条结果的详情页（正文 + 评论）。"""
         if not self._context:
-            logger.error("浏览器未启动，无法获取详情")
-            return notes
+            logger.warning("浏览器未启动，尝试自动启动以获取详情...")
+            try:
+                await self.launch(config)
+            except Exception as e:
+                logger.error(f"自动启动浏览器失败: {e}")
+            if not self._context:
+                logger.error("浏览器启动失败，无法获取详情")
+                return notes
 
         to_fetch = notes[:top_k]
         sem = asyncio.Semaphore(self.DETAIL_CONCURRENCY)

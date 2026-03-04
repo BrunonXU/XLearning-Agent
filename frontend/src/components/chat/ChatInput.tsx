@@ -35,8 +35,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const canSend = value.trim().length > 0 && !disabled
 
   return (
-    <div className="border-t border-[#DADCE0] px-6 py-4 bg-white flex-shrink-0">
-      <div className="relative flex items-end gap-3 rounded-2xl border border-[#DADCE0] focus-within:border-[#1A73E8] focus-within:ring-2 focus-within:ring-[#1A73E8]/20 bg-white px-5 py-3 shadow-sm transition-all duration-150">
+    <div className="px-8 py-6 bg-transparent flex-shrink-0">
+      <div className="relative flex items-end gap-3 rounded-3xl border border-transparent focus-within:border-[#1A73E8]/30 focus-within:ring-4 focus-within:ring-[#1A73E8]/10 bg-[#F8F9FA] px-6 py-3 transition-all duration-200">
         <textarea
           ref={textareaRef}
           value={value}
@@ -45,7 +45,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          className="flex-1 resize-none bg-transparent text-[15px] text-[#202124] placeholder:text-[#9AA0A6] outline-none min-h-[44px] max-h-[200px] py-2"
+          className="flex-1 resize-none bg-transparent text-base text-[#202124] placeholder:text-[#9AA0A6] outline-none min-h-[44px] max-h-[200px] py-2"
           aria-label="输入消息"
         />
         {onCancel ? (
@@ -61,11 +61,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             onClick={handleSend}
             disabled={!canSend}
             aria-label="发送消息"
-            className={`flex-shrink-0 mb-1 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${
-              canSend
+            className={`flex-shrink-0 mb-1 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${canSend
                 ? 'bg-[#1A73E8] text-white hover:bg-[#1557B0] active:scale-95 shadow-sm'
                 : 'bg-[#F1F3F4] text-[#9AA0A6] cursor-not-allowed'
-            }`}
+              }`}
           >
             发送
           </button>

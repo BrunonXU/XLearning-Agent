@@ -39,6 +39,7 @@ class SearchResultItem(BaseModel):
     commentSummary: str = ""
     engagementMetrics: Dict[str, Any] = {}
     imageUrls: List[str] = []
+    topComments: List[str] = []
 
 
 class SearchProgressEvent(BaseModel):
@@ -125,7 +126,12 @@ async def search_stream(body: SearchRequest, request: Request):
             return
 
         from src.specialists.search_orchestrator import SearchOrchestrator
-        orchestrator = SearchOrchestrator()
+        from src.providers.factory import ProviderFactory
+        try:
+            llm = ProviderFactory.create_llm()
+        except Exception:
+            llm = None
+        orchestrator = SearchOrchestrator(llm_provider=llm)
 
         try:
             async for event in orchestrator.search_all_platforms_stream(
@@ -195,4 +201,5 @@ def _to_search_result_item(result_dict: dict) -> SearchResultItem:
         commentSummary=result_dict.get("comment_summary", ""),
         engagementMetrics=result_dict.get("engagement_metrics", {}),
         imageUrls=result_dict.get("image_urls", []),
+        topComments=result_dict.get("comments_preview", []),
     )

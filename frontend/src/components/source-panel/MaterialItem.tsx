@@ -1,17 +1,38 @@
 import React, { useState } from 'react'
 import { ConfirmModal } from '../ui/Modal'
-import type { Material, PlatformType } from '../../types'
+import type { Material } from '../../types'
 
-const PLATFORM_ICONS: Record<PlatformType, string> = {
-  bilibili: '📺', youtube: '🎬', google: '🌐',
-  github: '🔗', xiaohongshu: '📕', other: '📄',
+export const MaterialIcon = ({ material, className = "" }: { material: Material, className?: string }) => {
+  const name = material.name.toLowerCase()
+  if (name.endsWith('.pdf')) {
+    return (
+      <div className={`flex items-center justify-center bg-transparent border-2 border-[#D93025] text-[#D93025] rounded-md font-bold ${className}`}>
+        PDF
+      </div>
+    )
+  }
+  if (name.endsWith('.md') || name.endsWith('.txt')) {
+    return (
+      <div className={`flex flex-col items-center justify-center bg-[#1A73E8] text-white rounded-md font-bold ${className}`}>
+        <span className="leading-none mt-0.5">M</span>
+        <span className="leading-none text-[8px] md:text-[10px]">↓</span>
+      </div>
+    )
+  }
+
+  // Default URL / Web
+  return (
+    <div className={`flex items-center justify-center bg-transparent border-2 border-[#1A73E8] text-[#1A73E8] rounded-full font-bold ${className}`}>
+      🌐
+    </div>
+  )
 }
 
 const STATUS_DOT: Record<Material['status'], React.ReactNode> = {
-  ready:    <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="就绪" />,
-  parsing:  <span className="w-2 h-2 rounded-full bg-gray-300 animate-pulse flex-shrink-0" title="解析中" />,
+  ready: <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="就绪" />,
+  parsing: <span className="w-2 h-2 rounded-full bg-gray-300 animate-pulse flex-shrink-0" title="解析中" />,
   chunking: <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" title="分块中" />,
-  error:    <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="错误" />,
+  error: <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="错误" />,
 }
 
 interface MaterialItemProps {
@@ -19,13 +40,31 @@ interface MaterialItemProps {
   isSelected: boolean
   onClick: () => void
   onRemove: () => void
+  onRename?: (newName: string) => void
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent<HTMLLIElement>) => void
+  onDragEnter?: (e: React.DragEvent<HTMLLIElement>) => void
+  onDragEnd?: (e: React.DragEvent<HTMLLIElement>) => void
+  onDragOver?: (e: React.DragEvent<HTMLLIElement>) => void
 }
 
 export const MaterialItem: React.FC<MaterialItemProps> = ({
-  material, isSelected, onClick, onRemove,
+  material, isSelected, onClick, onRemove, onRename,
+  draggable, onDragStart, onDragEnter, onDragEnd, onDragOver
 }) => {
   const [hovered, setHovered] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [draftName, setDraftName] = useState(material.name)
+
+  const commitRename = () => {
+    setEditingName(false)
+    if (draftName.trim() && draftName.trim() !== material.name) {
+      onRename?.(draftName.trim())
+    } else {
+      setDraftName(material.name)
+    }
+  }
 
   const displayName = material.name.length > 22 ? material.name.slice(0, 22) + '…' : material.name
 
@@ -35,11 +74,15 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
         role="option"
         aria-selected={isSelected}
         tabIndex={0}
-        className={`flex items-center gap-3 h-11 px-3 rounded-xl cursor-pointer transition-all duration-150 focus-visible:ring-2 focus-visible:ring-[#1A73E8] outline-none ${
-          isSelected
-            ? 'bg-[#E8F0FE] border-l-[3px] border-[#1A73E8]'
-            : 'hover:bg-[#F1F3F4]'
-        }`}
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragEnter={onDragEnter}
+        onDragEnd={onDragEnd}
+        onDragOver={onDragOver}
+        className={`flex items-center gap-3 h-12 px-3 rounded-xl cursor-default transition-transform duration-200 focus-visible:ring-2 focus-visible:ring-[#1A73E8] outline-none ${isSelected
+          ? 'bg-[#E8F0FE] border-l-[3px] border-[#1A73E8]'
+          : 'hover:bg-[#F1F3F4]'
+          }`}
         onClick={onClick}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
@@ -48,16 +91,42 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <span className="text-lg flex-shrink-0" aria-hidden="true">{PLATFORM_ICONS[material.type]}</span>
-        <span className="flex-1 text-sm text-[#202124] truncate">{displayName}</span>
-        {hovered ? (
-          <button
-            aria-label="移除材料"
-            onClick={e => { e.stopPropagation(); setConfirmOpen(true) }}
-            className="text-[#9AA0A6] hover:text-red-500 text-base flex-shrink-0 transition-colors duration-150 w-5 h-5 flex items-center justify-center"
-          >
-            ✕
-          </button>
+        <MaterialIcon material={material} className="w-6 h-7 text-[8px] flex-shrink-0" />
+        {editingName ? (
+          <input
+            autoFocus
+            value={draftName}
+            onChange={e => setDraftName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') { setDraftName(material.name); setEditingName(false) }
+            }}
+            className="flex-1 text-sm bg-transparent border-b border-[#1A73E8] outline-none px-0.5 text-[#202124]"
+            onClick={e => e.stopPropagation()}
+            aria-label="重命名材料"
+          />
+        ) : (
+          <span className="flex-1 text-sm text-[#202124] truncate">{displayName}</span>
+        )}
+
+        {hovered && !editingName ? (
+          <div className="flex items-center flex-shrink-0">
+            <button
+              aria-label="重命名材料"
+              onClick={e => { e.stopPropagation(); setEditingName(true) }}
+              className="text-[#9AA0A6] hover:text-[#1A73E8] text-base transition-colors duration-150 w-6 h-6 flex items-center justify-center mr-1"
+            >
+              ✎
+            </button>
+            <button
+              aria-label="移除材料"
+              onClick={e => { e.stopPropagation(); setConfirmOpen(true) }}
+              className="text-[#9AA0A6] hover:text-red-500 text-base transition-colors duration-150 w-5 h-5 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
         ) : (
           <span className="flex-shrink-0">{STATUS_DOT[material.status]}</span>
         )}

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { MaterialList } from './MaterialList'
+import { MaterialIcon } from './MaterialItem'
 import { SearchPanel } from './SearchPanel'
 import { UploadArea } from './UploadArea'
 import { PreviewPopup } from './PreviewPopup'
@@ -10,12 +12,10 @@ import type { Material, SearchResult } from '../../types'
 
 type ActiveTab = 'upload' | 'search'
 
-/** 判断材料是否为本地上传文件（非外部搜索资源） */
 function isLocalFile(m: Material): boolean {
   return m.type === 'other' || !m.url
 }
 
-/** 推断本地文件类型 */
 function inferFileType(name: string): 'markdown' | 'pdf' | 'text' {
   const lower = name.toLowerCase()
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown'
@@ -26,16 +26,20 @@ function inferFileType(name: string): 'markdown' | 'pdf' | 'text' {
 interface SourcePanelProps {
   planId?: string
   onReadingChange?: (reading: boolean) => void
+  isCollapsed?: boolean
+  onToggleCollapse?: () => void
 }
 
-export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReadingChange }) => {
+export const SourcePanel: React.FC<SourcePanelProps> = ({
+  planId = '', onReadingChange, isCollapsed = false, onToggleCollapse
+}) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('upload')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [previewResult, setPreviewResult] = useState<SearchResult | null>(null)
   const [viewingMaterial, setViewingMaterial] = useState<Material | null>(null)
+  const [hoveredFile, setHoveredFile] = useState<{ id: string, rect: DOMRect } | null>(null)
   const { materials, removeMaterial, addMaterial } = useSourceStore()
 
-  // 清理残留的临时材料（temp- 开头的 ID 是上传中断留下的）
   useEffect(() => {
     const tempMats = materials.filter(m => m.id.startsWith('temp-'))
     tempMats.forEach(m => removeMaterial(m.id))
@@ -46,7 +50,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReading
     try {
       await fetch(`/api/material/${id}?plan_id=${planId}`, { method: 'DELETE' })
     } catch {
-      // 静默失败
+      // quiet
     }
   }
 
@@ -61,16 +65,13 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReading
     if (!mat) return
 
     if (isLocalFile(mat)) {
-      // 本地文件 → 左侧面板内全屏展示
       setViewingMaterial(mat)
       onReadingChange?.(true)
     } else {
-      // 外部资源 → PreviewPopup（从 searchStore 获取详情）
       const detail = useSearchStore.getState().getResultDetail(id)
       if (detail) {
         setPreviewResult(detail)
       } else {
-        // 没有缓存的详情，构造基础 SearchResult
         setPreviewResult({
           id: mat.id,
           title: mat.name,
@@ -85,9 +86,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReading
   }
 
   const handleAddFromSearch = (results: SearchResult[]) => {
-    // 保存完整搜索结果到 searchStore（供 PreviewPopup 使用）
     useSearchStore.getState().saveResultDetails(results)
-
     results.forEach(r => {
       addMaterial({
         id: r.id,
@@ -103,7 +102,6 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReading
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
-      {/* PreviewPopup overlay */}
       {previewResult && (
         <PreviewPopup
           result={previewResult}
@@ -116,7 +114,6 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReading
         />
       )}
 
-      {/* ContentViewer — 左侧面板内全屏覆盖 */}
       {viewingMaterial && (
         <div className="absolute inset-0 z-50 bg-white dark:bg-dark-surface overflow-hidden">
           <ContentViewer
@@ -129,41 +126,68 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReading
         </div>
       )}
 
-      <div className="flex items-center justify-between px-5 h-14 flex-shrink-0 border-b border-[#DADCE0]">
-        <span className="text-base font-semibold text-[#202124] flex items-center gap-2">
-          📚 学习材料
-          {materials.length > 0 && (
-            <span className="text-xs bg-[#E8F0FE] text-[#1A73E8] px-1.5 py-0.5 rounded-full font-medium">
-              {materials.length}
-            </span>
-          )}
-        </span>
-        <button
-          aria-label="添加材料"
-          className="w-7 h-7 flex items-center justify-center rounded-full text-[#5F6368] hover:bg-[#F1F3F4] transition-colors duration-150 text-xl leading-none"
-        >
-          +
-        </button>
-      </div>
-
-      <div className="flex gap-2 px-4 py-3 flex-shrink-0">
-        {(['upload', 'search'] as ActiveTab[]).map(tab => (
+      <div className={`flex items-center h-[68px] px-6 border-b border-[#E0E0E0] flex-shrink-0 transition-all ${isCollapsed ? 'justify-center px-0 flex-col gap-0 border-b-0 h-[68px]' : 'justify-between'}`}>
+        {!isCollapsed && (
+          <span className="text-base font-semibold text-[#202124] flex items-center gap-2">
+            学习材料
+            {materials.length > 0 && (
+              <span className="text-xs bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-medium">
+                {materials.length}
+              </span>
+            )}
+          </span>
+        )}
+        <div className={`flex items-center gap-2 ${isCollapsed ? 'flex-col' : ''}`}>
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 h-10 rounded-lg text-sm font-medium transition-all duration-150 ${
-              activeTab === tab
-                ? 'bg-[#E8F0FE] text-[#1A73E8]'
-                : 'text-[#5F6368] hover:bg-[#F1F3F4]'
-            }`}
+            aria-label={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            onClick={onToggleCollapse}
+            className="w-10 h-10 flex items-center justify-center rounded-xl text-[#5F6368] hover:bg-[#F1F3F4] transition-colors duration-150"
           >
-            {tab === 'upload' ? '➕ 上传文件' : '🔍 搜索资源'}
+            {isCollapsed ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+            )}
           </button>
-        ))}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 pb-4">
-        {activeTab === 'upload' ? (
+      {!isCollapsed && (
+        <div className="flex gap-2 px-6 py-3 flex-shrink-0 animate-in fade-in duration-200">
+          {(['upload', 'search'] as ActiveTab[]).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 h-9 rounded-lg text-sm font-medium transition-all duration-150 ${activeTab === tab ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'text-[#5F6368] hover:bg-[#F1F3F4]'
+                }`}
+            >
+              {tab === 'upload' ? '➕ 上传文件' : '🔍 搜索资源'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className={`flex-1 overflow-y-auto scrollbar-thin ${isCollapsed ? 'py-4' : 'px-6 pb-6'}`}>
+        {isCollapsed ? (
+          <ul className="flex flex-col items-center gap-4 w-full relative">
+            <li className="w-10 h-10 flex items-center justify-center rounded-full text-[#5F6368] hover:bg-[#F1F3F4] transition-colors duration-150 cursor-pointer text-2xl"
+              onClick={onToggleCollapse}>
+              +
+            </li>
+            {materials.map(m => (
+              <li key={m.id} onClick={() => handleSelect(m.id)}
+                onMouseEnter={(e) => setHoveredFile({ id: m.id, rect: e.currentTarget.getBoundingClientRect() })}
+                onMouseLeave={() => setHoveredFile(null)}
+                className="group relative flex items-center justify-center w-full focus:outline-none">
+
+                <div className={`w-12 h-12 flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 ${selectedId === m.id ? 'bg-[#E8F0FE]' : 'hover:bg-[#F1F3F4]'
+                  }`}>
+                  <MaterialIcon material={m} className="w-7 h-8 text-[10px]" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : activeTab === 'upload' ? (
           <div className="flex flex-col gap-3">
             <UploadArea planId={planId} />
             <MaterialList
@@ -174,9 +198,18 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ planId = '', onReading
             />
           </div>
         ) : (
-          <SearchPanel onAddToMaterials={handleAddFromSearch} />
+          <SearchPanel planId={planId} onAddToMaterials={handleAddFromSearch} />
         )}
       </div>
+
+      {/* Tooltip Portal */}
+      {hoveredFile && isCollapsed && createPortal(
+        <div style={{ top: hoveredFile.rect.top + (hoveredFile.rect.height / 2), left: hoveredFile.rect.right + 8, transform: 'translateY(-50%)' }}
+          className="fixed z-[9999] px-3 py-1.5 bg-[#1E1E1E] text-white text-[13px] whitespace-nowrap rounded-md shadow-lg pointer-events-none fade-in duration-200">
+          {materials.find(m => m.id === hoveredFile.id)?.name}
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
