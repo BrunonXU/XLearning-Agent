@@ -28,7 +28,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* 顶部留白防粘连区域（固定不滚动） */}
+      {/* 顶部标题栏 */}
+      <div className="h-[68px] flex items-center px-8 flex-shrink-0 border-b border-[#E5E5E5]">
+        <span className="text-base font-semibold text-[#1A1A18]">对话</span>
+      </div>
+      {/* 标题栏下方留白（与其他面板一致） */}
       <div className="h-4 flex-shrink-0" />
 
       {/* 消息列表 */}

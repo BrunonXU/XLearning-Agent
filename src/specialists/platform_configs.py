@@ -60,10 +60,10 @@ _xiaohongshu_config = PlatformConfig(
     link_selector="a",
     description_selector=".desc",
     resource_type="note",
-    requires_login=True,
+    requires_login=False,  # XhsSearcher 自行管理登录
     cookie_file="scripts/.xhs_cookies.json",
     use_js_extraction=True,
-    js_extract_fn="",  # JS 提取逻辑在 ResourceCollector 中实现
+    js_extract_fn="",
     use_hybrid_mode=True,
     api_intercept_patterns=[
         "/api/sns/web/v1/search/notes",

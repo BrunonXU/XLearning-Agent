@@ -141,7 +141,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
       status: 'searching',
     })
 
-    // 60s 超时
+    // 120s 超时（多平台搜索 + 详情提取 + LLM 评估需要较长时间）
     timeoutRef.current = setTimeout(() => {
       abortController.abort()
       useSearchStore.getState().updateActiveSearch({
@@ -149,7 +149,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
         error: '搜索超时，请重试',
         abortController: null,
       })
-    }, 60000)
+    }, 120000)
 
     try {
       const res = await fetch('/api/search/stream', {

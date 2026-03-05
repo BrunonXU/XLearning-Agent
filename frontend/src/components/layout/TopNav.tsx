@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 interface TopNavProps {
   planTitle?: string
@@ -16,7 +15,6 @@ export const TopNav: React.FC<TopNavProps> = ({
   isDark = false,
   onNewPlan,
 }) => {
-  const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(planTitle)
   const [avatarOpen, setAvatarOpen] = useState(false)
@@ -75,15 +73,15 @@ export const TopNav: React.FC<TopNavProps> = ({
         )}
       </div>
 
-      <div className="flex items-center gap-3 flex-shrink-0">
+      <div className="flex items-center gap-3 flex-shrink-0 mr-6">
         {/* 新建规划按钮 */}
         {onNewPlan && (
           <button
             onClick={onNewPlan}
-            aria-label="新建规划"
-            className="h-7 px-4 rounded-full border border-[#E5E5E5] text-[#5F6368] text-xs font-medium hover:bg-[#F0EDE8] hover:border-[#D97757] hover:text-[#D97757] transition-all duration-150"
+            aria-label="新建学习规划"
+            className="h-9 px-6 rounded-full bg-[#1A1A18] text-white text-sm font-medium hover:bg-[#2D2D2B] active:scale-95 transition-all duration-150 shadow-sm whitespace-nowrap"
           >
-            + 新建
+            + 新建学习规划
           </button>
         )}
         {/* 头像菜单区 */}

@@ -166,3 +166,12 @@ scripts/*_results.json
 frontend/node_modules/
 frontend/dist/
 frontend/.env.local
+
+# ===========================================
+# Browser Data & MediaCrawler
+# ===========================================
+browser_data/
+scripts/MediaCrawler/
+scripts/xhs_*.json
+scripts/xhs_*.png
+scripts/poc_xhs_*.py

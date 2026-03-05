@@ -129,7 +129,8 @@ async def search_stream(body: SearchRequest, request: Request):
         from src.providers.factory import ProviderFactory
         try:
             llm = ProviderFactory.create_llm()
-        except Exception:
+        except Exception as e:
+            logger.warning(f"LLM provider 创建失败，关键词翻译将不可用: {e}")
             llm = None
         orchestrator = SearchOrchestrator(llm_provider=llm)
 

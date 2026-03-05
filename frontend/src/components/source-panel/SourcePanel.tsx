@@ -98,6 +98,33 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
       })
     })
     setActiveTab('upload')
+
+    // 持久化到后端数据库
+    if (planId) {
+      fetch('/api/materials/from-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: results.map(r => ({
+            id: r.id,
+            planId: planId,
+            platform: r.platform,
+            name: r.title.slice(0, 40),
+            url: r.url,
+            extraData: {
+              description: r.description,
+              qualityScore: r.qualityScore,
+              recommendationReason: r.recommendationReason,
+              contentSummary: r.contentSummary,
+              commentSummary: r.commentSummary,
+              engagementMetrics: r.engagementMetrics,
+              imageUrls: r.imageUrls,
+              topComments: r.topComments,
+            },
+          })),
+        }),
+      }).catch(() => { /* 静默失败 */ })
+    }
   }
 
   return (
@@ -126,7 +153,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
         </div>
       )}
 
-      <div className={`flex items-center h-[68px] px-8 flex-shrink-0 transition-all ${isCollapsed ? 'justify-center px-0 flex-col gap-0 h-[68px]' : 'justify-between'}`}>
+      <div className={`flex items-center h-[68px] px-8 flex-shrink-0 transition-all border-b border-[#E5E5E5] ${isCollapsed ? 'justify-center px-0 flex-col gap-0 h-[68px]' : 'justify-between'}`}>
         {!isCollapsed && (
           <span className="text-base font-semibold text-[#202124] flex items-center gap-2 mt-2">
             学习材料

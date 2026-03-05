@@ -205,7 +205,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
   return (
     <div className="flex flex-col h-full overflow-hidden bg-white dark:bg-dark-bg">
       {/* 标题栏 */}
-      <div className={`flex items-center h-[68px] px-8 flex-shrink-0 transition-all ${isCollapsed ? 'justify-center px-0 flex-col gap-0 h-[68px]' : 'justify-between'}`}>
+      <div className={`flex items-center h-[68px] px-8 flex-shrink-0 transition-all border-b border-[#E5E5E5] ${isCollapsed ? 'justify-center px-0 flex-col gap-0 h-[68px]' : 'justify-between'}`}>
         {!isCollapsed && (
           <span className="text-base font-semibold text-[#202124] dark:text-dark-text mt-2">Studio</span>
         )}

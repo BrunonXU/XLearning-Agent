@@ -30,6 +30,7 @@ from src.specialists.resource_collector import ResourceCollector
 from src.specialists.search_cache import SearchCache
 from src.specialists.bilibili_searcher import BiliBiliSearcher
 from src.specialists.slot_allocator import SlotAllocator
+from src.specialists.xhs_searcher import XhsSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ class SearchOrchestrator:
         self._browser_agent = BrowserAgent()
         self._quality_scorer = QualityScorer(llm_provider=llm_provider)
         self._bilibili_searcher = BiliBiliSearcher()
+        self._xhs_searcher = XhsSearcher()
         # 搜索体验重设计：两阶段漏斗筛选 + 流水线执行
         self._engagement_ranker = EngagementRanker()
         self._quality_assessor = QualityAssessor(llm_provider=llm_provider)
@@ -90,6 +92,8 @@ class SearchOrchestrator:
         # 关键词翻译
         self._llm = llm_provider
         self._translation_cache: Dict[str, str] = {}
+        # 浏览器启动锁，防止并发平台重复 launch
+        self._browser_launch_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -254,7 +258,7 @@ class SearchOrchestrator:
             per_platform_limit: 每平台搜索条数，None 则使用默认值 10
             cancel_event: 取消信号，设置后中断所有进行中的任务
         """
-        PLATFORM_TIMEOUT = 45.0  # 单平台超时（秒）
+        PLATFORM_TIMEOUT = 90.0  # 单平台超时（秒），小红书需要串行获取详情+评论
 
         _cancel = cancel_event or asyncio.Event()
 
@@ -283,6 +287,10 @@ class SearchOrchestrator:
         if _CHINESE_RE.search(query):
             try:
                 translated_query = await self._translate_keyword(query)
+                if translated_query:
+                    logger.info(f"英文平台将使用翻译关键词: '{query}' -> '{translated_query}'")
+                else:
+                    logger.warning(f"关键词翻译返回 None，英文平台将使用原始中文关键词: '{query}'")
             except Exception as e:
                 logger.warning(f"关键词翻译失败，使用原始关键词: {e}")
 
@@ -303,6 +311,8 @@ class SearchOrchestrator:
         async def _search_with_timeout(platform_name: str) -> List[RawSearchResult]:
             config = PLATFORM_CONFIGS[platform_name]
             search_query = translated_query if (platform_name in _ENGLISH_PLATFORMS and translated_query) else query
+            if search_query != query:
+                logger.info(f"[{platform_name}] 使用翻译关键词: '{search_query}'")
             platform_limit = allocations[platform_name].search_count
             return await asyncio.wait_for(
                 self._search_single_platform(search_query, config, platform_limit),
@@ -348,7 +358,15 @@ class SearchOrchestrator:
                     all_raw.extend(result)
                     logger.info(f"{platform_name}: {len(result)} 条结果")
 
-        # 第二批：不需要登录的浏览器平台并发跑（此时浏览器状态已稳定）
+        # 登录平台搜索完成后，关闭浏览器释放资源。
+        # 这样浏览器平台会启动全新的 headless 浏览器，避免：
+        # 1. 重登录后浏览器处于 headless=False 可见模式导致不稳定
+        # 2. 旧浏览器上下文残留 Cookie/状态干扰其他平台
+        if login_platforms and browser_platforms:
+            logger.info("登录平台搜索完成，关闭浏览器以便浏览器平台使用干净实例")
+            await self.close()
+
+        # 第二批：不需要登录的浏览器平台并发跑（全新 headless 浏览器）
         if browser_platforms:
             browser_tasks = [_search_with_timeout(p) for p in browser_platforms]
             browser_results = await asyncio.gather(*browser_tasks, return_exceptions=True)
@@ -540,9 +558,14 @@ class SearchOrchestrator:
             return None
 
         try:
-            translated = self._llm.simple_chat(
-                f"将以下中文搜索关键词翻译为简洁的英文搜索词，只输出翻译结果，不要解释：\n{query}",
-                system_prompt="你是一个搜索关键词翻译助手。将中文关键词翻译为适合英文搜索引擎的简洁英文搜索词。只输出翻译结果。",
+            # simple_chat 是同步方法，放到线程池执行避免阻塞事件循环
+            loop = asyncio.get_event_loop()
+            translated = await loop.run_in_executor(
+                None,
+                lambda: self._llm.simple_chat(
+                    f"将以下中文搜索关键词翻译为简洁的英文搜索词，只输出翻译结果，不要解释：\n{query}",
+                    system_prompt="你是一个搜索关键词翻译助手。将中文关键词翻译为适合英文搜索引擎的简洁英文搜索词。只输出翻译结果。",
+                ),
             )
             translated = translated.strip()
             if translated:
@@ -562,6 +585,7 @@ class SearchOrchestrator:
     async def close(self) -> None:
         """关闭浏览器资源。"""
         await self._browser_agent.close()
+        await self._xhs_searcher.close()
 
     # ------------------------------------------------------------------
     # Internal
@@ -570,7 +594,7 @@ class SearchOrchestrator:
     async def _search_single_platform(
         self, query: str, config: PlatformConfig, limit: int = 10
     ) -> List[RawSearchResult]:
-        """搜索单个平台，小红书平台额外获取详情。
+        """搜索单个平台，小红书使用专用 XhsSearcher。
         
         Args:
             query: 搜索关键词
@@ -578,29 +602,31 @@ class SearchOrchestrator:
             limit: 搜索结果数量限制
         """
         try:
-            # 使用 API 搜索的平台（如 bilibili）
+            # API 搜索平台
             if config.use_api_search:
                 if config.name == "bilibili":
                     return await self._bilibili_searcher.search(query, limit)
                 else:
                     logger.warning(f"平台 {config.name} 配置了 use_api_search 但无对应搜索器")
                     return []
+
+            # 小红书：使用 XhsSearcher（MediaCrawler 签名 + httpx）
+            if config.name == "xiaohongshu":
+                results = await self._xhs_searcher.search(query, limit)
+                if results:
+                    results.sort(key=_xhs_composite_score, reverse=True)
+                    results = results[:limit]
+                return results
             
-            # 确保浏览器已启动
-            if self._browser_agent._browser is None:
-                await self._browser_agent.launch(config)
-                # launch 失败时 _browser 仍为 None
+            # 其他平台：浏览器搜索
+            async with self._browser_launch_lock:
                 if self._browser_agent._browser is None:
-                    logger.error(f"浏览器启动失败，无法搜索 {config.name}")
-                    return []
+                    await self._browser_agent.launch(config, allow_interactive_login=False)
+                    if self._browser_agent._browser is None:
+                        logger.error(f"浏览器启动失败，无法搜索 {config.name}")
+                        return []
 
             results = await self._browser_agent.search_platform(query, config)
-
-            # 小红书：按综合分排序（跳过详情页获取，加快搜索速度）
-            if config.name == "xiaohongshu" and results:
-                results.sort(key=_xhs_composite_score, reverse=True)
-                results = results[:limit]  # 只保留 top N
-
             return results
 
         except Exception as e:

@@ -90,12 +90,14 @@ class BrowserAgent:
     # launch / close
     # ------------------------------------------------------------------
 
-    async def launch(self, config: PlatformConfig) -> None:
+    async def launch(self, config: PlatformConfig, allow_interactive_login: bool = True) -> None:
         """启动浏览器实例（带反检测配置），如需登录则加载 Cookie。
 
         - 有 Cookie 且有效时窗口隐藏运行（offscreen），用户看不到
         - 不需要登录的平台也隐藏运行
-        - 没有 Cookie 或 Cookie 失效时弹出可见浏览器让用户手动登录（最多等 3 分钟）
+        - 没有 Cookie 或 Cookie 失效时：
+          - allow_interactive_login=True: 弹出可见浏览器让用户手动登录（最多等 3 分钟）
+          - allow_interactive_login=False: 直接跳过，不弹窗（搜索流程中使用）
         
         使用 headless="new"（Chromium 新版无头模式）隐藏运行，反爬检测能力接近有头模式。
         仅在需要用户手动登录时才用 headless=False 弹出可见窗口。
@@ -153,6 +155,19 @@ class BrowserAgent:
                         await self._context.clear_cookies()
 
                 if need_login:
+                    if not allow_interactive_login:
+                        logger.warning(f"Cookie 失效且不允许交互登录 ({config.name})，跳过该平台")
+                        # 清理已启动的浏览器资源
+                        try:
+                            await self._browser.close()
+                            await self._playwright.stop()
+                        except Exception:
+                            pass
+                        self._browser = None
+                        self._context = None
+                        self._playwright = None
+                        return
+
                     # 如果当前是隐藏模式，需要关闭重新以可见模式启动
                     if hidden_mode:
                         await self._browser.close()
@@ -414,7 +429,7 @@ class BrowserAgent:
             # 尝试自动启动浏览器（可能是 close 后重新搜索的场景）
             logger.warning("浏览器未启动，尝试自动启动...")
             try:
-                await self.launch(config)
+                await self.launch(config, allow_interactive_login=False)
             except Exception as e:
                 logger.error(f"自动启动浏览器失败: {e}")
             if not self._context:
@@ -498,7 +513,7 @@ class BrowserAgent:
         if not self._context:
             logger.warning("浏览器未启动，尝试自动启动以获取详情...")
             try:
-                await self.launch(config)
+                await self.launch(config, allow_interactive_login=False)
             except Exception as e:
                 logger.error(f"自动启动浏览器失败: {e}")
             if not self._context:

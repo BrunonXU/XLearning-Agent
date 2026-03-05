@@ -29,6 +29,31 @@ MAX_COMMENTS = 10
 # GitHub 基础 URL，用于将相对路径转为完整 URL
 GITHUB_BASE_URL = "https://github.com"
 
+# YouTube 基础 URL
+YOUTUBE_BASE_URL = "https://www.youtube.com"
+
+# Google 基础 URL
+GOOGLE_BASE_URL = "https://www.google.com"
+
+# 平台 URL 前缀映射（相对路径 → 完整 URL）
+_PLATFORM_BASE_URLS = {
+    "github": GITHUB_BASE_URL,
+    "youtube": YOUTUBE_BASE_URL,
+    "google": GOOGLE_BASE_URL,
+}
+
+
+def _normalize_url(url: str, platform: str) -> str:
+    """将相对 URL 补全为完整 URL。已是完整 URL 则原样返回。"""
+    if not url:
+        return url
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    base = _PLATFORM_BASE_URLS.get(platform)
+    if base and url.startswith("/"):
+        return base + url
+    return url
+
 
 class ResourceCollector:
     """从浏览器页面提取结构化资源数据"""
@@ -55,12 +80,10 @@ class ResourceCollector:
                     desc_el = await item.query_selector(config.description_selector)
                     description = (await desc_el.inner_text()).strip() if desc_el else ""
 
-                    # GitHub URL 修正：跳过空 URL，相对 URL 补全为完整 URL
-                    if config.name == "github":
-                        if not url:
-                            continue
-                        if url.startswith("/"):
-                            url = GITHUB_BASE_URL + url
+                    # URL 修正：跳过空 URL，相对 URL 补全为完整 URL
+                    url = _normalize_url(url, config.name)
+                    if config.name in ("github",) and not url:
+                        continue
 
                     if not title and not url:
                         continue

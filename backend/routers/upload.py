@@ -375,3 +375,42 @@ async def get_material_raw(material_id: str):
                 headers={"Content-Disposition": "inline"},
             )
     raise HTTPException(status_code=404, detail="File not found")
+
+
+class SearchMaterialItem(BaseModel):
+    id: str
+    planId: str
+    platform: str
+    name: str
+    url: str
+    extraData: Optional[dict] = None
+
+
+class BatchAddRequest(BaseModel):
+    items: list[SearchMaterialItem]
+
+
+@router.post("/materials/from-search", status_code=201)
+async def add_materials_from_search(body: BatchAddRequest):
+    """将搜索结果批量加入学习材料（持久化到数据库）"""
+    added = []
+    for item in body.items:
+        try:
+            database.insert_material({
+                "id": item.id,
+                "planId": item.planId,
+                "type": item.platform,
+                "name": item.name,
+                "url": item.url,
+                "status": "ready",
+                "addedAt": datetime.now(timezone.utc).isoformat(),
+                "extraData": item.extraData or {},
+            })
+            added.append(item.id)
+        except (ValueError, RuntimeError) as e:
+            logger.warning("Skip duplicate or failed material %s: %s", item.id, e)
+    # Sync source count for each unique plan
+    plan_ids = set(item.planId for item in body.items)
+    for pid in plan_ids:
+        _sync_source_count(pid)
+    return {"added": added, "count": len(added)}
