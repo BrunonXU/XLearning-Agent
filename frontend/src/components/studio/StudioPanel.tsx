@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ContentViewer } from './ContentViewer'
 import { NoteEditor } from './NoteEditor'
 import { DevPanel } from './DevPanel'
+import { TodayTasksBar } from './TodayTasksBar'
 import { useStudioStore } from '../../store/studioStore'
 import { useSourceStore } from '../../store/sourceStore'
 import type { GeneratedContent, Note } from '../../types'
@@ -19,7 +20,7 @@ const TOOLS = [
 
 const TYPE_ICONS: Record<string, string> = {
   'learning-plan': '📅', 'study-guide': '📖', 'flashcards': '🃏',
-  'quiz': '🧪', 'progress-report': '📊',
+  'quiz': '🧪', 'progress-report': '📊', 'mind-map': '🧠', 'day-summary': '✅',
 }
 
 interface StudioPanelProps {
@@ -34,7 +35,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
     devMode, setDevMode,
   } = useStudioStore()
   const { materials } = useSourceStore()
-  const [loadingTool, setLoadingTool] = useState<string | null>(null)
+  const [loadingTools, setLoadingTools] = useState<Set<string>>(new Set())
   const [viewingContent, setViewingContent] = useState<GeneratedContent | null>(null)
   const [editingNote, setEditingNote] = useState<Note | null>(null)
   const [showNewNote, setShowNewNote] = useState(false)
@@ -42,24 +43,67 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
   const [hoveredItem, setHoveredItem] = useState<{ id: string, title: string, rect: DOMRect } | null>(null)
   const prevMatCount = useRef(materials.length)
 
-  // 工具卡片点击
+  // 工具卡片点击（支持并发）
   const handleToolClick = async (type: string, label: string) => {
-    if (loadingTool) return
-    setLoadingTool(type)
+    if (loadingTools.has(type)) return
+    setLoadingTools(prev => new Set(prev).add(type))
     try {
-      const res = await fetch(`/api/studio/${type}?plan_id=${encodeURIComponent(planId)}`)
+      const { allDays, activePlanId } = useStudioStore.getState()
+      const currentDay = allDays.find(d => !d.completed) ?? null
+
+      const res = await fetch(`/api/studio/${type}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId: planId || activePlanId,
+          allDays,
+          currentDayNumber: currentDay?.dayNumber ?? null,
+        }),
+      })
       if (res.ok) {
         const data = await res.json()
+
+        // learning-plan special handling: parse JSON and update learning plan
+        if (type === 'learning-plan') {
+          try {
+            const parsed = JSON.parse(data.content)
+            if (parsed.days && Array.isArray(parsed.days)) {
+              const { setLearningPlan } = useStudioStore.getState()
+              const days = parsed.days.map((d: any) => ({
+                dayNumber: d.dayNumber,
+                title: d.title,
+                completed: false,
+                tasks: (d.tasks || []).map((t: any, i: number) => ({
+                  id: t.id || `task-${d.dayNumber}-${i}`,
+                  type: t.type || 'reading',
+                  title: t.title,
+                  completed: false,
+                })),
+              }))
+              setLearningPlan(days)
+              // Persist to backend
+              const pid = planId || activePlanId
+              if (pid) {
+                fetch(`/api/plans/${pid}/progress`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(days),
+                }).catch(() => {})
+              }
+            }
+          } catch { /* JSON parse failed, treat as Markdown */ }
+        }
+
         addGeneratedContent({
           id: `${type}-${Date.now()}`,
           type: type as GeneratedContent['type'],
           title: data.title || label,
           content: data.content,
-          createdAt: new Date().toISOString(),
+          createdAt: data.createdAt || new Date().toISOString(),
         })
       }
     } catch { /* 静默 */ }
-    finally { setLoadingTool(null) }
+    finally { setLoadingTools(prev => { const next = new Set(prev); next.delete(type); return next }) }
   }
 
   // 首次添加材料自动生成学习指南
@@ -128,7 +172,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
         <div className={`flex items-center gap-2 ${isCollapsed ? 'flex-col' : ''}`}>
           {!isCollapsed && (
             <button onClick={() => setDevMode(!devMode)}
-              className={`text-xs px-2 py-0.5 rounded-full transition-all ${devMode ? 'bg-blue-50 text-blue-600 border border-blue-300' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`text-[11px] px-2.5 py-1 rounded-md transition-all mr-2 font-medium ${devMode ? 'bg-blue-50 text-blue-600 border border-blue-300' : 'text-gray-400 hover:text-gray-600 border border-transparent hover:bg-black/5'}`}
               aria-label="开发者模式">DEV</button>
           )}
           <button
@@ -163,11 +207,14 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
         /* 正常模式：工具卡片 + 内容列表 + 笔记 */
         <>
           <div className="flex-1 overflow-y-auto">
+            {/* Today Tasks Bar */}
+            <TodayTasksBar planId={planId} />
+
             {/* 工具卡片网格 */}
             <div className="grid grid-cols-3 gap-3 px-6 py-4">
               {TOOLS.map(t => (
                 <button key={t.type} onClick={() => handleToolClick(t.type, t.label)}
-                  disabled={!!loadingTool}
+                  disabled={loadingTools.has(t.type)}
                   className={`relative flex flex-col justify-between h-[84px] text-left p-3 rounded-2xl ${t.bg} transition-all duration-75 active:scale-[0.98] cursor-pointer group`}>
                   <div className="flex w-full justify-between items-start">
                     <span className="text-[#444746] text-xl">{t.icon}</span>
@@ -176,7 +223,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
                     </div>
                   </div>
                   <span className="text-[13px] font-medium text-[#444746]">{t.label}</span>
-                  {loadingTool === t.type && (
+                  {loadingTools.has(t.type) && (
                     <div className="absolute inset-0 bg-white/60 rounded-2xl flex items-center justify-center">
                       <div className="w-5 h-5 border-2 border-[#1A73E8] border-t-transparent rounded-full animate-spin" />
                     </div>
@@ -201,7 +248,10 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-[#202124] dark:text-dark-text truncate">{item.title}</p>
                         <p className="text-xs text-[#5F6368] mt-0.5">
-                          {item.kind === 'note' ? '笔记' : item.type === 'learning-plan' ? '学习计划' : item.type === 'study-guide' ? '学习指南' : item.type === 'flashcards' ? '闪卡' : item.type === 'quiz' ? '测验' : '报告'}
+                          {item.kind === 'note' ? '笔记' : item.type === 'learning-plan' ? '学习计划' : item.type === 'study-guide' ? '学习指南' : item.type === 'flashcards' ? '闪卡' : item.type === 'quiz' ? '测验' : item.type === 'mind-map' ? '思维导图' : item.type === 'day-summary' ? '今日总结' : item.type === 'progress-report' ? '进度报告' : '报告'}
+                          {item.kind === 'generated' && (item as GeneratedContent).version && (item as GeneratedContent).version! > 1 && (
+                            <span className="ml-1 text-blue-500">V{(item as GeneratedContent).version}</span>
+                          )}
                           {' · '}{fmt(item.createdAt)}
                         </p>
                       </div>

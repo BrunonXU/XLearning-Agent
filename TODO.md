@@ -26,6 +26,12 @@
 
 - [ ] LangSmith 全链路追踪配置与验证（需要 API Key）
 
+### P0.5 - Orchestrator 统一入口改造
+
+- [ ] 将 chat.py 接入 Orchestrator（当前直接调 TutorAgent，绕过了意图识别/进度注入/搜索路由）
+- [ ] 对话中触发 Studio 生成（如"帮我创建学习规划"→ Orchestrator 意图识别 → 调 PromptBuilder → 生成内容 → SSE 推送到 Studio 面板）
+- [ ] 清理 Orchestrator 中的 Streamlit 残留代码（`st.session_state` 引用）
+
 ### P1 - 体验优化
 
 - [ ] 深色模式视觉微调（部分组件可能有颜色不协调）

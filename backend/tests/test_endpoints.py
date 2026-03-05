@@ -62,13 +62,17 @@ class TestSearch:
 
 class TestStudio:
     def test_valid_type(self):
-        r = client.get("/api/studio/study-guide?plan_id=test")
+        r = client.post("/api/studio/study-guide", json={
+            "planId": "test",
+            "allDays": [],
+            "currentDayNumber": None
+        })
         assert r.status_code == 200
         data = r.json()
         assert data["type"] == "study-guide"
 
     def test_invalid_type(self):
-        r = client.get("/api/studio/unknown-type")
+        r = client.post("/api/studio/unknown-type", json={})
         assert r.status_code == 400
 
 

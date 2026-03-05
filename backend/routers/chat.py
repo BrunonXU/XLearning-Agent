@@ -59,6 +59,23 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict]):
     ctx = get_session(plan_id)
     truncated = _truncate_history(history)
 
+    # Detect Studio tool trigger from chat message
+    from backend.intent_detector import detect_studio_trigger
+    triggered, tool_type = detect_studio_trigger(message)
+    if triggered and tool_type:
+        try:
+            from backend.routers.studio import generate_studio_content_internal
+            studio_content = await generate_studio_content_internal(tool_type, plan_id)
+            if studio_content:
+                studio_event = json.dumps({
+                    "type": "studio_update",
+                    "toolType": tool_type,
+                    "content": studio_content,
+                }, ensure_ascii=False)
+                yield f"data: {studio_event}\n\n"
+        except Exception as e:
+            logger.warning(f"[chat] Studio trigger failed: {e}")
+
     chunk_count = 0
     full_response = ""
     src_payload = []

@@ -64,10 +64,18 @@ export interface Note {
 
 export interface GeneratedContent {
   id: string;
-  type: 'learning-plan' | 'study-guide' | 'flashcards' | 'quiz' | 'progress-report';
+  type: 'learning-plan' | 'study-guide' | 'flashcards' | 'quiz' | 'progress-report' | 'mind-map' | 'day-summary';
   title: string;
   content: string;        // Markdown 格式
   createdAt: string;
+  version?: number;                    // 当前版本号（从 1 开始）
+  versions?: GeneratedContentVersion[]; // 历史版本（最新在前）
+}
+
+export interface GeneratedContentVersion {
+  content: string;
+  createdAt: string;
+  version: number;
 }
 
 export interface LearningPlan {
@@ -80,7 +88,7 @@ export interface LearningPlan {
   completedDays: number;
 }
 
-export type StudioToolType = 'learning-plan' | 'progress-report' | 'quiz' | 'study-guide' | 'flashcards' | 'notes';
+export type StudioToolType = 'learning-plan' | 'progress-report' | 'quiz' | 'study-guide' | 'flashcards' | 'notes' | 'mind-map' | 'day-summary';
 
 export interface StudioTool {
   type: StudioToolType;

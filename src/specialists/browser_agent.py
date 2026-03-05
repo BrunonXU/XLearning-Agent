@@ -97,8 +97,8 @@ class BrowserAgent:
         - 不需要登录的平台也隐藏运行
         - 没有 Cookie 或 Cookie 失效时弹出可见浏览器让用户手动登录（最多等 3 分钟）
         
-        注意：不使用 headless=True，因为小红书等平台会检测无头浏览器。
-        改用 headless=False + 窗口移到屏幕外的方式隐藏。
+        使用 headless="new"（Chromium 新版无头模式）隐藏运行，反爬检测能力接近有头模式。
+        仅在需要用户手动登录时才用 headless=False 弹出可见窗口。
         """
         try:
             from playwright.async_api import async_playwright
@@ -113,13 +113,10 @@ class BrowserAgent:
             needs_visible = (config.requires_login and config.cookie_file and not has_cookie_file)
             hidden_mode = not needs_visible  # 有 cookie 或不需要登录 → 隐藏
             launch_args = ["--disable-blink-features=AutomationControlled"]
-            if hidden_mode:
-                # 窗口移到屏幕外 + 最小化，用户完全看不到
-                launch_args.extend(["--window-position=-32000,-32000", "--window-size=1,1"])
 
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
-                headless=False,  # 始终 headless=False，避免被反爬检测
+                headless="new" if hidden_mode else False,  # 隐藏模式用新版 headless，登录时弹窗
                 args=launch_args,
             )
 

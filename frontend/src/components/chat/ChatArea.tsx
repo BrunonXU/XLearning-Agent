@@ -29,12 +29,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* 标题栏 */}
-      <div className="flex items-center justify-between px-6 pt-6 pb-3 border-b border-[#E0E0E0] flex-shrink-0">
+      <div className="flex items-center justify-between h-[68px] px-6 border-b border-[#E0E0E0] flex-shrink-0 transition-all">
         <span className="text-base font-semibold text-[#202124] dark:text-dark-text">对话</span>
       </div>
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-8 pb-6">
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-8 pt-6 pb-6">
         <MessageList messages={messages} isStreaming={isStreaming && !streamingContent} />
 
         {/* 流式输出气泡 */}

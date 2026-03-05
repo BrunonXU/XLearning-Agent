@@ -43,12 +43,6 @@ export const MaterialList: React.FC<MaterialListProps> = ({
 
   return (
     <div>
-      {/* 上传区域（拖拽） */}
-      <div className="border-2 border-dashed border-border rounded-xl p-4 mb-3 text-center hover:border-primary hover:bg-primary-light/30 transition-all duration-150 cursor-pointer">
-        <p className="text-xs text-text-secondary">拖拽 PDF 到此处，或</p>
-        <button className="text-xs text-primary hover:underline mt-0.5">点击选择文件</button>
-      </div>
-
       {/* 已添加材料 */}
       <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mt-4 mb-2">
         已添加材料

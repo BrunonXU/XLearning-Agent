@@ -95,6 +95,11 @@ class TutorAgent(BaseAgent):
         """设置进度追踪器"""
         self._progress_tracker = tracker
 
+    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        """纯 LLM 调用，不做任何 prompt 加工。供 PromptBuilder 等外部模块使用。"""
+        return self._call_llm(prompt, system_prompt=system_prompt)
+
+
     def _reset_sources(self):
         """重置当前回复的来源追踪列表"""
         self._current_sources = []

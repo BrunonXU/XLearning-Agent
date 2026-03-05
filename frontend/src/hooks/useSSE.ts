@@ -15,6 +15,7 @@
 
 import { useCallback, useRef } from 'react'
 import { useChatStore } from '../store/chatStore'
+import { useStudioStore } from '../store/studioStore'
 import type { ChatMessage } from '../types'
 
 const MAX_RETRIES = 3
@@ -95,6 +96,15 @@ export function useSSE(planId: string) {
                 pendingSources = evt.sources
               } else if (evt.type === 'questions') {
                 setSuggestedQuestions(evt.questions ?? [])
+              } else if (evt.type === 'studio_update') {
+                const { addGeneratedContent } = useStudioStore.getState()
+                addGeneratedContent({
+                  id: `${evt.toolType}-${Date.now()}`,
+                  type: evt.content.type,
+                  title: evt.content.title,
+                  content: evt.content.content,
+                  createdAt: evt.content.createdAt || new Date().toISOString(),
+                })
               } else if (evt.type === 'done') {
                 finalizeStream(pendingSources)
                 setStreaming(false)

@@ -91,8 +91,14 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     document.addEventListener('mouseup', onUp)
   }, [leftPct, rightPct])
 
+  // 动态背景色：根据折叠的侧边栏数量变深，加大色阶落差
+  const collapsedCount = (isLeftCollapsed ? 1 : 0) + (isRightCollapsed ? 1 : 0)
+  let bgClass = 'bg-[#E6DDF2]' // 0个折叠：浅香芋紫（基调）
+  if (collapsedCount === 1) bgClass = 'bg-[#D3CFDC]' // 1个折叠：偏暗的灰紫色
+  if (collapsedCount === 2) bgClass = 'bg-[#A8A0B8]' // 2个折叠：非常明显的深灰紫，进入沉浸黑夜环境
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[#F0F4F9] dark:bg-dark-bg">
+    <div className={`flex flex-col h-screen overflow-hidden ${bgClass} transition-colors duration-500 dark:bg-dark-bg`}>
       <div className="flex-shrink-0 bg-transparent px-4 py-2">
         {topNav}
       </div>
