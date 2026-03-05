@@ -35,7 +35,7 @@ class TutorAgent(BaseAgent):
     name = "TutorAgent"
     description = "互动教学，回答问题，进行测验"
     
-    system_prompt = """你是一个专业的 AI 学习导师。
+    _base_system_prompt = """你是一个专业的 AI 学习导师。
 
 **首次对话规则（非常重要）**：
 当对话历史为空（即学生第一次发言）时：
@@ -64,6 +64,14 @@ class TutorAgent(BaseAgent):
 5. 鼓励提出更多问题
 
 如果有相关的学习资料作为参考，请基于这些资料回答，并在适当时引用来源。"""
+
+    @property
+    def system_prompt(self) -> str:
+        from datetime import datetime
+        now = datetime.now()
+        weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        time_str = f"{now.strftime('%Y年%m月%d日 %H:%M:%S')} {weekdays[now.weekday()]}"
+        return f"【系统提示：当前真实时间是 {time_str}】\n\n" + self._base_system_prompt
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -115,6 +115,21 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_generated_contents_plan_id ON generated_contents(plan_id);
 
+            CREATE TABLE IF NOT EXISTS learner_profiles (
+                id          TEXT PRIMARY KEY,
+                plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+                goal        TEXT DEFAULT '',
+                duration    TEXT DEFAULT '',
+                level       TEXT DEFAULT '',
+                background  TEXT DEFAULT '',
+                daily_hours TEXT DEFAULT '',
+                extra       TEXT DEFAULT '{}',
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
+                UNIQUE(plan_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_learner_profiles_plan_id ON learner_profiles(plan_id);
+
             CREATE TABLE IF NOT EXISTS search_history (
                 id          TEXT PRIMARY KEY,
                 plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
@@ -526,6 +541,49 @@ def get_generated_contents(plan_id: str) -> List[dict]:
 # ---------------------------------------------------------------------------
 # Search History CRUD
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Learner Profiles CRUD
+# ---------------------------------------------------------------------------
+
+def upsert_learner_profile(profile: dict) -> dict:
+    conn = get_connection()
+    data = _to_snake(profile)
+    if "extra" in data and not isinstance(data["extra"], str):
+        data["extra"] = json.dumps(data["extra"], ensure_ascii=False)
+    now = datetime.now(timezone.utc).isoformat()
+    data.setdefault("created_at", now)
+    data["updated_at"] = now
+    try:
+        with conn:
+            conn.execute(
+                """INSERT INTO learner_profiles (id, plan_id, goal, duration, level, background, daily_hours, extra, created_at, updated_at)
+                   VALUES (:id, :plan_id, :goal, :duration, :level, :background, :daily_hours, :extra, :created_at, :updated_at)
+                   ON CONFLICT(plan_id) DO UPDATE SET
+                     goal=excluded.goal, duration=excluded.duration, level=excluded.level,
+                     background=excluded.background, daily_hours=excluded.daily_hours,
+                     extra=excluded.extra, updated_at=excluded.updated_at""",
+                data,
+            )
+        result = dict(data)
+        result["extra"] = json.loads(result.get("extra") or "{}")
+        return _to_camel(result)
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
+def get_learner_profile(plan_id: str) -> Optional[dict]:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM learner_profiles WHERE plan_id = ?", (plan_id,)
+    ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["extra"] = json.loads(d.get("extra") or "{}")
+    return _to_camel(d)
+
 
 def insert_search_history(entry: dict) -> dict:
     conn = get_connection()

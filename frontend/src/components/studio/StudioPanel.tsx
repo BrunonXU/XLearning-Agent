@@ -4,15 +4,16 @@ import { ContentViewer } from './ContentViewer'
 import { NoteEditor } from './NoteEditor'
 import { DevPanel } from './DevPanel'
 import { TodayTasksBar } from './TodayTasksBar'
+import { LearnerProfileModal } from './LearnerProfileModal'
 import { useStudioStore } from '../../store/studioStore'
 import { useSourceStore } from '../../store/sourceStore'
-import type { GeneratedContent, Note } from '../../types'
+import type { GeneratedContent, Note, LearnerProfile } from '../../types'
 
 /** NotebookLM 风格工具定义 */
 const TOOLS = [
-  { type: 'study-guide', icon: '📖', label: '学习指南', bg: 'bg-[#F0F4FA] hover:bg-[#E2EAF4]', iconBg: 'text-blue-600' },
+  { type: 'study-guide', icon: '📖', label: '学习指南', bg: 'bg-[#F0F4FA] hover:bg-[#E2EAF4]', iconBg: 'text-orange-600' },
   { type: 'flashcards', icon: '🃏', label: '闪卡', bg: 'bg-[#FCE8E6] hover:bg-[#FAD2CF]', iconBg: 'text-red-500' },
-  { type: 'quiz', icon: '🧪', label: '测验', bg: 'bg-[#E4F2FD] hover:bg-[#D2E3FC]', iconBg: 'text-blue-500' },
+  { type: 'quiz', icon: '🧪', label: '测验', bg: 'bg-[#E4F2FD] hover:bg-[#D2E3FC]', iconBg: 'text-orange-500' },
   { type: 'learning-plan', icon: '📅', label: '学习计划', bg: 'bg-[#E6F4EA] hover:bg-[#CEEAD6]', iconBg: 'text-green-600' },
   { type: 'progress-report', icon: '📊', label: '进度报告', bg: 'bg-[#FEF7E0] hover:bg-[#FDE293]', iconBg: 'text-orange-600' },
   { type: 'mind-map', icon: '🧠', label: '思维导图', bg: 'bg-[#F3E8FF] hover:bg-[#E9D5FF]', iconBg: 'text-purple-600' },
@@ -32,7 +33,7 @@ interface StudioPanelProps {
 export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollapsed = false, onToggleCollapse }) => {
   const {
     generatedContents, notes, addGeneratedContent, addNote, updateNote, deleteNote,
-    devMode, setDevMode,
+    devMode, setDevMode, learnerProfile, saveLearnerProfile,
   } = useStudioStore()
   const { materials } = useSourceStore()
   const [loadingTools, setLoadingTools] = useState<Set<string>>(new Set())
@@ -41,14 +42,32 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
   const [showNewNote, setShowNewNote] = useState(false)
   const [menuId, setMenuId] = useState<string | null>(null)
   const [hoveredItem, setHoveredItem] = useState<{ id: string, title: string, rect: DOMRect } | null>(null)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [pendingToolType, setPendingToolType] = useState<{ type: string; label: string } | null>(null)
   const prevMatCount = useRef(materials.length)
+
+  // Types that require learner profile before first generation
+  const PROFILE_REQUIRED_TYPES = new Set(['study-guide', 'learning-plan'])
 
   // 工具卡片点击（支持并发）
   const handleToolClick = async (type: string, label: string) => {
     if (loadingTools.has(type)) return
+
+    // Check if learner profile is needed for this type
+    if (PROFILE_REQUIRED_TYPES.has(type) && !learnerProfile) {
+      setPendingToolType({ type, label })
+      setShowProfileModal(true)
+      return
+    }
+
+    await doGenerate(type, label)
+  }
+
+  const doGenerate = async (type: string, label: string) => {
+    if (loadingTools.has(type)) return
     setLoadingTools(prev => new Set(prev).add(type))
     try {
-      const { allDays, activePlanId } = useStudioStore.getState()
+      const { allDays, activePlanId, learnerProfile: profile } = useStudioStore.getState()
       const currentDay = allDays.find(d => !d.completed) ?? null
 
       const res = await fetch(`/api/studio/${type}`, {
@@ -58,6 +77,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
           planId: planId || activePlanId,
           allDays,
           currentDayNumber: currentDay?.dayNumber ?? null,
+          learnerProfile: profile || undefined,
         }),
       })
       if (res.ok) {
@@ -88,7 +108,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(days),
-                }).catch(() => {})
+                }).catch(() => { })
               }
             }
           } catch { /* JSON parse failed, treat as Markdown */ }
@@ -116,6 +136,26 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
       }
     }
   }, [materials.length])
+
+  const handleProfileSave = async (profile: LearnerProfile) => {
+    const pid = planId || useStudioStore.getState().activePlanId
+    await saveLearnerProfile(pid, profile)
+    setShowProfileModal(false)
+    if (pendingToolType) {
+      const { type, label } = pendingToolType
+      setPendingToolType(null)
+      doGenerate(type, label)
+    }
+  }
+
+  const handleProfileSkip = () => {
+    setShowProfileModal(false)
+    if (pendingToolType) {
+      const { type, label } = pendingToolType
+      setPendingToolType(null)
+      doGenerate(type, label)
+    }
+  }
 
   const handleSaveNote = (data: { id?: string; title: string; content: string }) => {
     if (data.id) {
@@ -165,14 +205,14 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
   return (
     <div className="flex flex-col h-full overflow-hidden bg-white dark:bg-dark-bg">
       {/* 标题栏 */}
-      <div className={`flex items-center h-[68px] px-6 border-b border-[#E0E0E0] flex-shrink-0 transition-all ${isCollapsed ? 'justify-center px-0 flex-col gap-0 border-b-0 h-[68px]' : 'justify-between'}`}>
+      <div className={`flex items-center h-[68px] px-8 flex-shrink-0 transition-all ${isCollapsed ? 'justify-center px-0 flex-col gap-0 h-[68px]' : 'justify-between'}`}>
         {!isCollapsed && (
-          <span className="text-base font-semibold text-[#202124] dark:text-dark-text">Studio</span>
+          <span className="text-base font-semibold text-[#202124] dark:text-dark-text mt-2">Studio</span>
         )}
         <div className={`flex items-center gap-2 ${isCollapsed ? 'flex-col' : ''}`}>
           {!isCollapsed && (
             <button onClick={() => setDevMode(!devMode)}
-              className={`text-[11px] px-2.5 py-1 rounded-md transition-all mr-2 font-medium ${devMode ? 'bg-blue-50 text-blue-600 border border-blue-300' : 'text-gray-400 hover:text-gray-600 border border-transparent hover:bg-black/5'}`}
+              className={`text-[11px] px-2.5 py-1 rounded-md transition-all mr-2 font-medium ${devMode ? 'bg-[#F2DFD3] text-[#D97757] border border-[#D97757]/30' : 'text-gray-400 hover:text-gray-600 border border-transparent hover:bg-black/5'}`}
               aria-label="开发者模式">DEV</button>
           )}
           <button
@@ -206,30 +246,46 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
       ) : (
         /* 正常模式：工具卡片 + 内容列表 + 笔记 */
         <>
+          {/* 顶部留白防粘连区域（固定不滚动） */}
+          <div className="h-4 flex-shrink-0" />
           <div className="flex-1 overflow-y-auto">
             {/* Today Tasks Bar */}
             <TodayTasksBar planId={planId} />
 
             {/* 工具卡片网格 */}
-            <div className="grid grid-cols-3 gap-3 px-6 py-4">
-              {TOOLS.map(t => (
-                <button key={t.type} onClick={() => handleToolClick(t.type, t.label)}
-                  disabled={loadingTools.has(t.type)}
-                  className={`relative flex flex-col justify-between h-[84px] text-left p-3 rounded-2xl ${t.bg} transition-all duration-75 active:scale-[0.98] cursor-pointer group`}>
-                  <div className="flex w-full justify-between items-start">
-                    <span className="text-[#444746] text-xl">{t.icon}</span>
-                    <div className="w-6 h-6 rounded-full bg-black/5 flex items-center justify-center text-gray-500">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                    </div>
-                  </div>
-                  <span className="text-[13px] font-medium text-[#444746]">{t.label}</span>
-                  {loadingTools.has(t.type) && (
-                    <div className="absolute inset-0 bg-white/60 rounded-2xl flex items-center justify-center">
-                      <div className="w-5 h-5 border-2 border-[#1A73E8] border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
+            <div className="px-6 py-4">
+              {learnerProfile && (
+                <button onClick={() => { setPendingToolType(null); setShowProfileModal(true) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 mb-3 rounded-xl bg-[#F2DFD3] hover:bg-[#EBD1C1] text-sm text-[#D97757] transition-colors">
+                  <span>📋</span>
+                  <span className="flex-1 text-left truncate">
+                    {learnerProfile.goal ? learnerProfile.goal.slice(0, 20) : '学习者画像'}
+                    {learnerProfile.level ? ` · ${learnerProfile.level}` : ''}
+                    {learnerProfile.duration ? ` · ${learnerProfile.duration}` : ''}
+                  </span>
+                  <span className="text-xs text-[#D97757]/70">编辑</span>
                 </button>
-              ))}
+              )}
+              <div className="grid grid-cols-3 gap-3">
+                {TOOLS.map(t => (
+                  <button key={t.type} onClick={() => handleToolClick(t.type, t.label)}
+                    disabled={loadingTools.has(t.type)}
+                    className={`relative flex flex-col justify-between h-[84px] text-left p-3 rounded-2xl ${t.bg} transition-all duration-75 active:scale-[0.98] cursor-pointer group`}>
+                    <div className="flex w-full justify-between items-start">
+                      <span className="text-[#444746] text-xl">{t.icon}</span>
+                      <div className="w-6 h-6 rounded-full bg-black/5 flex items-center justify-center text-gray-500">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                      </div>
+                    </div>
+                    <span className="text-[13px] font-medium text-[#444746]">{t.label}</span>
+                    {loadingTools.has(t.type) && (
+                      <div className="absolute inset-0 bg-white/60 rounded-2xl flex items-center justify-center">
+                        <div className="w-5 h-5 border-2 border-[#D97757] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* 内容列表 */}
@@ -240,7 +296,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
                 <ul className="flex flex-col">
                   {allItems.map(item => (
                     <li key={item.id}
-                      className="flex items-center gap-3 px-3 py-3.5 rounded-xl border border-transparent hover:border-[#E0E0E0] hover:bg-white hover:shadow-sm active:bg-[#E8F0FE] dark:hover:bg-dark-surface cursor-pointer transition-all duration-75 group relative"
+                      className="flex items-center gap-3 px-3 py-3.5 rounded-xl border border-transparent hover:border-[#E0E0E0] hover:bg-white hover:shadow-sm active:bg-[#F2DFD3] dark:hover:bg-dark-surface cursor-pointer transition-all duration-75 group relative"
                       onClick={() => item.kind === 'generated' ? setViewingContent(item as GeneratedContent) : setEditingNote(item as unknown as Note)}>
                       <span className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
                         {item.kind === 'note' ? '📝' : (TYPE_ICONS[item.type] || '📄')}
@@ -250,13 +306,13 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
                         <p className="text-xs text-[#5F6368] mt-0.5">
                           {item.kind === 'note' ? '笔记' : item.type === 'learning-plan' ? '学习计划' : item.type === 'study-guide' ? '学习指南' : item.type === 'flashcards' ? '闪卡' : item.type === 'quiz' ? '测验' : item.type === 'mind-map' ? '思维导图' : item.type === 'day-summary' ? '今日总结' : item.type === 'progress-report' ? '进度报告' : '报告'}
                           {item.kind === 'generated' && (item as GeneratedContent).version && (item as GeneratedContent).version! > 1 && (
-                            <span className="ml-1 text-blue-500">V{(item as GeneratedContent).version}</span>
+                            <span className="ml-1 text-[#D97757]">V{(item as GeneratedContent).version}</span>
                           )}
                           {' · '}{fmt(item.createdAt)}
                         </p>
                       </div>
                       {item.kind === 'generated' && (
-                        <button className="w-8 h-8 rounded-full bg-[#F0F4F9] text-[#1A73E8] flex items-center justify-center hover:bg-[#E8F0FE] transition-colors">
+                        <button className="w-8 h-8 rounded-full bg-[#F9F8F6] text-[#D97757] flex items-center justify-center hover:bg-[#F2DFD3] transition-colors">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                         </button>
                       )}
@@ -282,10 +338,10 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
           </div>
 
           {/* 底部：添加笔记按钮 */}
-          <div className="flex-shrink-0 px-6 py-4">
+          <div className="flex-shrink-0 px-6 py-4 flex justify-center">
             <button onClick={() => setShowNewNote(true)}
-              className="w-full flex items-center justify-center gap-2 h-10 rounded-full border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-all">
-              📝 添加笔记
+              className="flex items-center justify-center gap-2 h-9 px-8 rounded-full bg-[#1A1A18] text-white text-sm font-medium hover:bg-[#2D2D2B] active:scale-95 transition-all duration-150 shadow-sm">
+              + 添加笔记
             </button>
           </div>
         </>
@@ -296,6 +352,13 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
       {(editingNote || showNewNote) && (
         <NoteEditor note={editingNote || undefined} onSave={handleSaveNote}
           onClose={() => { setEditingNote(null); setShowNewNote(false) }} planId={planId} />
+      )}
+      {showProfileModal && (
+        <LearnerProfileModal
+          initial={learnerProfile}
+          onSave={handleProfileSave}
+          onSkip={handleProfileSkip}
+        />
       )}
 
       {/* Tooltip Portal */}

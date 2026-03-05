@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DayProgress, GeneratedContent, Note } from '../types'
+import type { DayProgress, GeneratedContent, Note, LearnerProfile } from '../types'
 
 interface StudioStore {
   allDays: DayProgress[]
@@ -9,6 +9,8 @@ interface StudioStore {
   activePlanId: string
   devMode: boolean
   loading: boolean
+  learnerProfile: LearnerProfile | null
+  profileLoaded: boolean
 
   loadStudioData: (planId: string) => Promise<void>
   setLearningPlan: (days: DayProgress[]) => void
@@ -19,6 +21,8 @@ interface StudioStore {
   updateNote: (id: string, patch: Partial<Note>) => void
   deleteNote: (id: string) => void
   setDevMode: (v: boolean) => void
+  setLearnerProfile: (p: LearnerProfile) => void
+  saveLearnerProfile: (planId: string, p: LearnerProfile) => Promise<void>
 }
 
 function findCurrentDay(days: DayProgress[]): DayProgress | null {
@@ -62,29 +66,36 @@ export const useStudioStore = create<StudioStore>()((set) => ({
   activePlanId: '',
   devMode: false,
   loading: false,
+  learnerProfile: null,
+  profileLoaded: false,
 
   loadStudioData: async (planId: string) => {
     set({ loading: true, activePlanId: planId })
     try {
-      const [progressRes, contentsRes, notesRes] = await Promise.all([
+      const [progressRes, contentsRes, notesRes, profileRes] = await Promise.all([
         fetch(`/api/plans/${planId}/progress`),
         fetch(`/api/plans/${planId}/generated-contents`),
         fetch(`/api/plans/${planId}/notes`),
+        fetch(`/api/learner-profile/${planId}`),
       ])
       const [progress, contents, notesData] = await Promise.all([
         progressRes.ok ? progressRes.json() : [],
         contentsRes.ok ? contentsRes.json() : [],
         notesRes.ok ? notesRes.json() : [],
       ])
+      const profileData = profileRes.ok ? await profileRes.json() : null
+      const hasProfile = profileData && (profileData.goal || profileData.level || profileData.duration)
       set({
         allDays: progress,
         currentDay: findCurrentDay(progress),
         generatedContents: mergeContentsByType(contents),
         notes: notesData,
+        learnerProfile: hasProfile ? profileData : null,
+        profileLoaded: true,
         loading: false,
       })
     } catch {
-      set({ loading: false })
+      set({ loading: false, profileLoaded: true })
     }
   },
 
@@ -134,4 +145,17 @@ export const useStudioStore = create<StudioStore>()((set) => ({
   updateNote: (id, patch) => set((s) => ({ notes: s.notes.map((n) => n.id === id ? { ...n, ...patch } : n) })),
   deleteNote: (id) => set((s) => ({ notes: s.notes.filter((n) => n.id !== id) })),
   setDevMode: (v) => set({ devMode: v }),
+  setLearnerProfile: (p) => set({ learnerProfile: p }),
+  saveLearnerProfile: async (planId, p) => {
+    try {
+      const res = await fetch(`/api/learner-profile/${planId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p),
+      })
+      if (res.ok) {
+        set({ learnerProfile: p })
+      }
+    } catch { /* silent */ }
+  },
 }))

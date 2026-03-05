@@ -4,7 +4,9 @@ IntentDetector — 从聊天消息中检测 Studio 工具触发意图
 通过关键词子串匹配检测用户是否想要重新生成某个 Studio 工具的内容。
 """
 
-TRIGGER_KEYWORDS: dict[str, list[str]] = {
+from typing import Dict, List, Optional, Tuple
+
+TRIGGER_KEYWORDS: Dict[str, List[str]] = {
     "learning-plan": ["更新学习计划", "重新生成计划", "调整计划", "新计划"],
     "study-guide": ["更新学习指南", "重新生成指南", "刷新指南"],
     "flashcards": ["重新生成闪卡", "更新闪卡", "刷新闪卡", "新闪卡"],
@@ -13,7 +15,7 @@ TRIGGER_KEYWORDS: dict[str, list[str]] = {
 }
 
 
-def detect_studio_trigger(message: str) -> tuple[bool, str | None]:
+def detect_studio_trigger(message: str) -> Tuple[bool, Optional[str]]:
     """检测消息中是否包含 Studio 工具触发关键词。
 
     Returns:

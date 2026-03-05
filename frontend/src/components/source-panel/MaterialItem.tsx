@@ -13,7 +13,7 @@ export const MaterialIcon = ({ material, className = "" }: { material: Material,
   }
   if (name.endsWith('.md') || name.endsWith('.txt')) {
     return (
-      <div className={`flex flex-col items-center justify-center bg-[#1A73E8] text-white rounded-md font-bold ${className}`}>
+      <div className={`flex flex-col items-center justify-center bg-[#D97757] text-white rounded-md font-bold ${className}`}>
         <span className="leading-none mt-0.5">M</span>
         <span className="leading-none text-[8px] md:text-[10px]">↓</span>
       </div>
@@ -22,7 +22,7 @@ export const MaterialIcon = ({ material, className = "" }: { material: Material,
 
   // Default URL / Web
   return (
-    <div className={`flex items-center justify-center bg-transparent border-2 border-[#1A73E8] text-[#1A73E8] rounded-full font-bold ${className}`}>
+    <div className={`flex items-center justify-center bg-transparent border-2 border-[#D97757] text-[#D97757] rounded-full font-bold ${className}`}>
       🌐
     </div>
   )
@@ -79,8 +79,8 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
         onDragEnter={onDragEnter}
         onDragEnd={onDragEnd}
         onDragOver={onDragOver}
-        className={`flex items-center gap-3 h-12 px-3 rounded-xl cursor-default transition-transform duration-200 focus-visible:ring-2 focus-visible:ring-[#1A73E8] outline-none ${isSelected
-          ? 'bg-[#E8F0FE] border-l-[3px] border-[#1A73E8]'
+        className={`flex items-center gap-3 h-12 px-3 rounded-xl cursor-default transition-transform duration-200 focus-visible:ring-2 focus-visible:ring-[#D97757] outline-none ${isSelected
+          ? 'bg-[#F2DFD3] border-l-[3px] border-[#D97757]'
           : 'hover:bg-[#F1F3F4]'
           }`}
         onClick={onClick}
@@ -102,7 +102,7 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
               if (e.key === 'Enter') commitRename()
               if (e.key === 'Escape') { setDraftName(material.name); setEditingName(false) }
             }}
-            className="flex-1 text-sm bg-transparent border-b border-[#1A73E8] outline-none px-0.5 text-[#202124]"
+            className="flex-1 text-sm bg-transparent border-b border-[#D97757] outline-none px-0.5 text-[#202124]"
             onClick={e => e.stopPropagation()}
             aria-label="重命名材料"
           />
@@ -115,7 +115,7 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
             <button
               aria-label="重命名材料"
               onClick={e => { e.stopPropagation(); setEditingName(true) }}
-              className="text-[#9AA0A6] hover:text-[#1A73E8] text-base transition-colors duration-150 w-6 h-6 flex items-center justify-center mr-1"
+              className="text-[#9AA0A6] hover:text-[#D97757] text-base transition-colors duration-150 w-6 h-6 flex items-center justify-center mr-1"
             >
               ✎
             </button>

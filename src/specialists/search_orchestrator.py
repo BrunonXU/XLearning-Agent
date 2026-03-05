@@ -14,7 +14,9 @@ SearchOrchestrator - 搜索调度器
 
 import asyncio
 import logging
-from typing import AsyncGenerator, List, Optional
+import re
+from collections import defaultdict
+from typing import AsyncGenerator, Dict, List, Optional
 
 from src.core.models import SearchResult
 from src.specialists.browser_agent import BrowserAgent
@@ -27,11 +29,18 @@ from src.specialists.quality_scorer import QualityScorer
 from src.specialists.resource_collector import ResourceCollector
 from src.specialists.search_cache import SearchCache
 from src.specialists.bilibili_searcher import BiliBiliSearcher
+from src.specialists.slot_allocator import SlotAllocator
 
 logger = logging.getLogger(__name__)
 
 # 广告关键词（标题降权用）
 _AD_KEYWORDS = ["报班", "课程优惠", "限时", "折扣", "免费试听", "领取资料", "加群"]
+
+# 中文字符检测
+_CHINESE_RE = re.compile(r'[\u4e00-\u9fff]')
+
+# 需要英文关键词的平台
+_ENGLISH_PLATFORMS = {"youtube", "github", "google"}
 
 
 def _xhs_composite_score(r: RawSearchResult) -> float:
@@ -78,6 +87,9 @@ class SearchOrchestrator:
         self._engagement_ranker = EngagementRanker()
         self._quality_assessor = QualityAssessor(llm_provider=llm_provider)
         self._resource_collector = ResourceCollector()
+        # 关键词翻译
+        self._llm = llm_provider
+        self._translation_cache: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -118,22 +130,59 @@ class SearchOrchestrator:
         all_raw: List[RawSearchResult] = []
 
         try:
-            # 3. 并发搜索各平台
-            tasks = []
-            for p in valid_platforms:
-                config = PLATFORM_CONFIGS[p]
-                tasks.append(self._search_single_platform(query, config, limit))
+            # 分两批执行：需要登录的平台先串行跑（避免重登录关闭其他平台的浏览器），
+            # 然后不需要登录的浏览器平台并发跑。API 平台可以和任何批次并发。
+            login_platforms = [p for p in valid_platforms if PLATFORM_CONFIGS[p].requires_login]
+            api_platforms = [p for p in valid_platforms if PLATFORM_CONFIGS[p].use_api_search]
+            browser_platforms = [
+                p for p in valid_platforms
+                if not PLATFORM_CONFIGS[p].requires_login and not PLATFORM_CONFIGS[p].use_api_search
+            ]
 
-            results_per_platform = await asyncio.gather(*tasks, return_exceptions=True)
+            # API 平台并发启动
+            api_tasks = [
+                self._search_single_platform(query, PLATFORM_CONFIGS[p], limit)
+                for p in api_platforms
+            ]
 
-            for i, result in enumerate(results_per_platform):
-                platform_name = valid_platforms[i]
-                if isinstance(result, Exception):
-                    logger.warning(f"平台 {platform_name} 搜索失败: {result}")
-                    continue
-                if result:
-                    all_raw.extend(result)
-                    logger.info(f"{platform_name}: {len(result)} 条结果")
+            # 需要登录的平台串行执行（可能触发浏览器重启）
+            for p in login_platforms:
+                try:
+                    config = PLATFORM_CONFIGS[p]
+                    result = await self._search_single_platform(query, config, limit)
+                    if result:
+                        all_raw.extend(result)
+                        logger.info(f"{p}: {len(result)} 条结果")
+                except Exception as e:
+                    logger.warning(f"平台 {p} 搜索失败: {e}")
+
+            # 收集 API 平台结果
+            if api_tasks:
+                api_results = await asyncio.gather(*api_tasks, return_exceptions=True)
+                for i, result in enumerate(api_results):
+                    platform_name = api_platforms[i]
+                    if isinstance(result, Exception):
+                        logger.warning(f"平台 {platform_name} 搜索失败: {result}")
+                        continue
+                    if result:
+                        all_raw.extend(result)
+                        logger.info(f"{platform_name}: {len(result)} 条结果")
+
+            # 不需要登录的浏览器平台并发执行（浏览器状态已稳定）
+            if browser_platforms:
+                browser_tasks = [
+                    self._search_single_platform(query, PLATFORM_CONFIGS[p], limit)
+                    for p in browser_platforms
+                ]
+                browser_results = await asyncio.gather(*browser_tasks, return_exceptions=True)
+                for i, result in enumerate(browser_results):
+                    platform_name = browser_platforms[i]
+                    if isinstance(result, Exception):
+                        logger.warning(f"平台 {platform_name} 搜索失败: {result}")
+                        continue
+                    if result:
+                        all_raw.extend(result)
+                        logger.info(f"{platform_name}: {len(result)} 条结果")
 
         except Exception as e:
             logger.error(f"搜索执行异常: {e}")
@@ -226,7 +275,16 @@ class SearchOrchestrator:
             yield {"stage": "error", "message": "无有效搜索平台"}
             return
 
-        limit = per_platform_limit if per_platform_limit is not None else 10
+        # ---- 2.5 SlotAllocator 配额分配 ----
+        allocations = SlotAllocator.allocate(valid_platforms)
+
+        # ---- 2.6 关键词翻译（中文关键词 → 英文平台用翻译结果）----
+        translated_query = None
+        if _CHINESE_RE.search(query):
+            try:
+                translated_query = await self._translate_keyword(query)
+            except Exception as e:
+                logger.warning(f"关键词翻译失败，使用原始关键词: {e}")
 
         # ---- 3. 并发搜索各平台 ----
         all_raw: List[RawSearchResult] = []
@@ -244,24 +302,66 @@ class SearchOrchestrator:
 
         async def _search_with_timeout(platform_name: str) -> List[RawSearchResult]:
             config = PLATFORM_CONFIGS[platform_name]
+            search_query = translated_query if (platform_name in _ENGLISH_PLATFORMS and translated_query) else query
+            platform_limit = allocations[platform_name].search_count
             return await asyncio.wait_for(
-                self._search_single_platform(query, config, limit),
+                self._search_single_platform(search_query, config, platform_limit),
                 timeout=PLATFORM_TIMEOUT,
             )
 
-        tasks = [_search_with_timeout(p) for p in valid_platforms]
-        results_per_platform = await asyncio.gather(*tasks, return_exceptions=True)
+        # 分两批执行：需要登录的平台先串行跑（避免重登录关闭其他平台的浏览器），
+        # 然后不需要登录的浏览器平台并发跑。API 平台（bilibili）可以和任何批次并发。
+        login_platforms = [p for p in valid_platforms if PLATFORM_CONFIGS[p].requires_login]
+        api_platforms = [p for p in valid_platforms if PLATFORM_CONFIGS[p].use_api_search]
+        browser_platforms = [
+            p for p in valid_platforms
+            if not PLATFORM_CONFIGS[p].requires_login and not PLATFORM_CONFIGS[p].use_api_search
+        ]
 
-        for i, result in enumerate(results_per_platform):
-            platform_name = valid_platforms[i]
-            if isinstance(result, Exception):
-                err_msg = f"平台 {platform_name} 搜索失败: {result}"
+        # 第一批：API 平台 + 需要登录的平台（串行，可能触发浏览器重启）
+        batch1_tasks = [_search_with_timeout(p) for p in api_platforms]
+        for p in login_platforms:
+            if _cancel.is_set():
+                await self.close()
+                return
+            try:
+                result = await _search_with_timeout(p)
+                if result:
+                    all_raw.extend(result)
+                    logger.info(f"{p}: {len(result)} 条结果")
+            except Exception as e:
+                err_msg = f"平台 {p} 搜索失败: {e}"
                 logger.warning(err_msg)
                 errors.append(err_msg)
-                continue
-            if result:
-                all_raw.extend(result)
-                logger.info(f"{platform_name}: {len(result)} 条结果")
+
+        # API 平台结果收集（可能已经完成）
+        if batch1_tasks:
+            api_results = await asyncio.gather(*batch1_tasks, return_exceptions=True)
+            for i, result in enumerate(api_results):
+                platform_name = api_platforms[i]
+                if isinstance(result, Exception):
+                    err_msg = f"平台 {platform_name} 搜索失败: {result}"
+                    logger.warning(err_msg)
+                    errors.append(err_msg)
+                    continue
+                if result:
+                    all_raw.extend(result)
+                    logger.info(f"{platform_name}: {len(result)} 条结果")
+
+        # 第二批：不需要登录的浏览器平台并发跑（此时浏览器状态已稳定）
+        if browser_platforms:
+            browser_tasks = [_search_with_timeout(p) for p in browser_platforms]
+            browser_results = await asyncio.gather(*browser_tasks, return_exceptions=True)
+            for i, result in enumerate(browser_results):
+                platform_name = browser_platforms[i]
+                if isinstance(result, Exception):
+                    err_msg = f"平台 {platform_name} 搜索失败: {result}"
+                    logger.warning(err_msg)
+                    errors.append(err_msg)
+                    continue
+                if result:
+                    all_raw.extend(result)
+                    logger.info(f"{platform_name}: {len(result)} 条结果")
 
         if not all_raw:
             await self.close()
@@ -280,7 +380,18 @@ class SearchOrchestrator:
             "total": len(all_raw),
         }
 
-        candidates = self._engagement_ranker.rank(all_raw)
+        # 按平台分组，每个平台内独立排序取各自配额内的 top 候选
+        by_platform = defaultdict(list)
+        for r in all_raw:
+            by_platform[r.platform].append(r)
+
+        candidates = []
+        top_k_slots = SlotAllocator.allocate_top_k(allocations, top_k)
+        for platform, results in by_platform.items():
+            platform_top_k = top_k_slots.get(platform, 0)
+            ranked = self._engagement_ranker.rank(results, top_n=platform_top_k)
+            candidates.extend(ranked)
+
         total_candidates = len(candidates)
 
         if _cancel.is_set():
@@ -349,9 +460,23 @@ class SearchOrchestrator:
             "message": "AI 正在评估内容质量...",
         }
 
-        # ---- 8. 排序取 top_k ----
-        scored_results.sort(key=lambda s: s.quality_score, reverse=True)
-        top_scored = scored_results[:top_k]
+        # ---- 8. 按平台比例选取 top_k ----
+        actual_counts = {
+            p: len([s for s in scored_results if s.raw.platform == p])
+            for p in valid_platforms
+        }
+        final_slots = SlotAllocator.redistribute(allocations, actual_counts, top_k)
+
+        top_scored = []
+        for platform, slots in final_slots.items():
+            platform_results = sorted(
+                [s for s in scored_results if s.raw.platform == platform],
+                key=lambda s: s.quality_score, reverse=True,
+            )
+            top_scored.extend(platform_results[:slots])
+
+        # 最终按质量评分排序
+        top_scored.sort(key=lambda s: s.quality_score, reverse=True)
 
         # ---- 9. 转换为 SearchResult ----
         final = [self._to_search_result_extended(s) for s in top_scored]
@@ -394,6 +519,41 @@ class SearchOrchestrator:
             comment_summary=scored.comment_summary,
             image_urls=list(raw.image_urls) if raw.image_urls else [],
         )
+
+    async def _translate_keyword(self, query: str) -> Optional[str]:
+        """使用 LLM 将中文关键词翻译为英文搜索词。
+
+        结果缓存在 self._translation_cache 中，同一 query 仅翻译一次。
+        翻译失败时记录 WARNING 并返回 None 作为降级。
+
+        Args:
+            query: 原始搜索关键词（包含中文）
+        Returns:
+            翻译后的英文搜索词，翻译失败时返回 None
+        """
+        # 缓存命中
+        if query in self._translation_cache:
+            return self._translation_cache[query]
+
+        if self._llm is None:
+            logger.warning("关键词翻译失败: LLM provider 未配置")
+            return None
+
+        try:
+            translated = self._llm.simple_chat(
+                f"将以下中文搜索关键词翻译为简洁的英文搜索词，只输出翻译结果，不要解释：\n{query}",
+                system_prompt="你是一个搜索关键词翻译助手。将中文关键词翻译为适合英文搜索引擎的简洁英文搜索词。只输出翻译结果。",
+            )
+            translated = translated.strip()
+            if translated:
+                self._translation_cache[query] = translated
+                logger.info(f"关键词翻译: '{query}' -> '{translated}'")
+                return translated
+            logger.warning(f"关键词翻译返回空结果: '{query}'")
+            return None
+        except Exception as e:
+            logger.warning(f"关键词翻译失败，使用原始关键词: {e}")
+            return None
 
     def expand_keywords(self, query: str) -> List[str]:
         """[TODO: 未来实现] 使用 LLM 扩展搜索关键词。MVP 返回原始关键词。"""

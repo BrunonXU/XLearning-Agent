@@ -38,7 +38,7 @@ export const TodayTasks: React.FC<TodayTasksProps> = ({
                   type="checkbox"
                   checked={task.completed}
                   onChange={() => onTaskToggle(i)}
-                  className="accent-[#1A73E8] w-4 h-4 flex-shrink-0"
+                  className="accent-[#D97757] w-4 h-4 flex-shrink-0"
                   aria-label={`标记完成：${task.title}`}
                 />
                 <span className={`text-sm flex-1 ${task.completed ? 'line-through text-[#9AA0A6]' : 'text-[#202124]'}`}>
@@ -57,7 +57,7 @@ export const TodayTasks: React.FC<TodayTasksProps> = ({
             onClick={() => onCompleteDay(currentDay.dayNumber)}
             disabled={!allDone}
             className={`text-sm transition-colors duration-150 ${
-              allDone ? 'text-[#1A73E8] hover:underline cursor-pointer' : 'text-[#9AA0A6] cursor-not-allowed'
+              allDone ? 'text-[#D97757] hover:underline cursor-pointer' : 'text-[#9AA0A6] cursor-not-allowed'
             }`}
           >
             完成 Day {currentDay.dayNumber} →

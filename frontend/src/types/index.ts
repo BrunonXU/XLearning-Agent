@@ -107,6 +107,15 @@ export interface SearchHistoryEntry {
   results: SearchResult[];
   resultCount: number;
   searchedAt: string;     // ISO 8601
+  status?: 'searching' | 'done' | 'error';
 }
 
 export type SearchStage = 'idle' | 'searching' | 'filtering' | 'extracting' | 'evaluating' | 'done' | 'error';
+
+export interface LearnerProfile {
+  goal: string;
+  duration: string;
+  level: string;
+  background: string;
+  dailyHours: string;
+}

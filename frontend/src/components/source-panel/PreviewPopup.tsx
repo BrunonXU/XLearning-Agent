@@ -101,7 +101,7 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#DADCE0] dark:border-dark-border bg-[#F8F9FA] dark:bg-dark-surface-secondary">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#E8F0FE] text-[#1A73E8]">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#F2DFD3] text-[#D97757]">
             <span aria-hidden="true">{platform.icon}</span>
             {platform.name}
           </span>
@@ -129,7 +129,7 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
               href={result.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="block text-xs text-[#1A73E8] hover:underline truncate"
+              className="block text-xs text-[#D97757] hover:underline truncate"
             >
               {result.url}
             </a>
@@ -225,7 +225,7 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
             {refreshError && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200">
                 <span className="text-sm text-red-600">{refreshError}</span>
-                <button onClick={handleRefresh} className="text-sm text-[#1A73E8] hover:underline font-medium">重试</button>
+                <button onClick={handleRefresh} className="text-sm text-[#D97757] hover:underline font-medium">重试</button>
               </div>
             )}
           </>

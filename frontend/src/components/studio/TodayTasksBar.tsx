@@ -39,7 +39,7 @@ export const TodayTasksBar: React.FC<TodayTasksBarProps> = ({ planId }) => {
   }
 
   return (
-    <div className="px-6 py-3 border-b border-gray-200 bg-blue-50/50">
+    <div className="px-6 py-3 border-b border-gray-200 bg-orange-50/50">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-medium text-gray-700">
           📅 Day {currentDay.dayNumber}: {currentDay.title}

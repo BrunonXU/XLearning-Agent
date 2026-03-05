@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 interface TopNavProps {
   planTitle?: string
   onTitleChange?: (title: string) => void
   onToggleDark?: () => void
   isDark?: boolean
+  onNewPlan?: () => void
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
@@ -12,7 +14,9 @@ export const TopNav: React.FC<TopNavProps> = ({
   onTitleChange,
   onToggleDark,
   isDark = false,
+  onNewPlan,
 }) => {
+  const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(planTitle)
   const [avatarOpen, setAvatarOpen] = useState(false)
@@ -36,7 +40,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   }
 
   return (
-    <header className="h-14 bg-transparent flex items-center justify-between px-4 z-10 flex-shrink-0">
+    <header className="h-12 bg-transparent flex items-center justify-between px-2 z-10 flex-shrink-0">
       {/* 左侧区域：Logo & 标题 */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
         <button onClick={() => window.location.href = '/'} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
@@ -55,7 +59,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={commitEdit}
                 onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') { setDraft(planTitle); setEditing(false) } }}
-                className="text-2xl font-semibold text-[#202124] dark:text-dark-text bg-transparent border-b border-primary outline-none focus:border-b-2 focus:border-blue-500 min-w-[300px] px-1"
+                className="text-2xl font-semibold text-[#202124] dark:text-dark-text bg-transparent border-b border-primary outline-none focus:border-b-2 focus:border-orange-500 min-w-[300px] px-1"
                 aria-label="编辑规划名称"
               />
             ) : (
@@ -71,12 +75,23 @@ export const TopNav: React.FC<TopNavProps> = ({
         )}
       </div>
 
-      <div className="flex items-center flex-shrink-0">
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {/* 新建规划按钮 */}
+        {onNewPlan && (
+          <button
+            onClick={onNewPlan}
+            aria-label="新建规划"
+            className="h-7 px-4 rounded-full border border-[#E5E5E5] text-[#5F6368] text-xs font-medium hover:bg-[#F0EDE8] hover:border-[#D97757] hover:text-[#D97757] transition-all duration-150"
+          >
+            + 新建
+          </button>
+        )}
+        {/* 头像菜单区 */}
         <div ref={avatarRef} className="relative">
           <button
             onClick={() => setAvatarOpen(!avatarOpen)}
             aria-label="用户菜单"
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-[#1A73E8] text-white text-xs font-medium hover:shadow-md transition-shadow duration-150"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-[#D97757] text-white text-xs font-medium hover:shadow-md transition-shadow duration-150"
           >
             U
           </button>

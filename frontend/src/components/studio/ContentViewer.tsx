@@ -15,12 +15,15 @@ interface ContentViewerProps {
 }
 
 /** 从可能被 ```json 包裹的字符串中提取 JSON */
-function extractJSON(raw: string): any | null {
+function extractJSON(raw: any): any | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  if (typeof raw !== 'string') return null;
   // 先直接尝试
-  try { return JSON.parse(raw) } catch {}
+  try { return JSON.parse(raw) } catch { }
   // 尝试提取 ```json ... ``` 块
   const m = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
-  if (m) { try { return JSON.parse(m[1]) } catch {} }
+  if (m) { try { return JSON.parse(m[1]) } catch { } }
   return null
 }
 
@@ -52,16 +55,41 @@ const MindMapRenderer: React.FC<{ markdown: string }> = ({ markdown }) => {
 }
 
 /** 进度报告 JSON 渲染 */
-const ProgressReportRenderer: React.FC<{ content: string }> = ({ content }) => {
+const ProgressReportRenderer: React.FC<{ content: any }> = ({ content }) => {
   const data = extractJSON(content)
-  if (!data || typeof data !== 'object') return <ReactMarkdown>{content}</ReactMarkdown>
+  const textFallback = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+  if (!data || typeof data !== 'object') return <ReactMarkdown>{textFallback}</ReactMarkdown>
+
 
   return (
     <div className="space-y-6">
       {data.summary && (
         <div>
           <h3 className="text-base font-semibold text-gray-800 mb-2">📋 总结</h3>
-          <p className="text-sm text-gray-600 leading-relaxed">{data.summary}</p>
+          {typeof data.summary === 'object' ? (
+            <div className="space-y-2">
+              {(data.summary.completedDays !== undefined || data.summary.totalDays !== undefined) && (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-gray-100 rounded-full h-2">
+                    <div className="bg-green-500 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, data.summary.percentage ?? (data.summary.totalDays ? Math.round((data.summary.completedDays / data.summary.totalDays) * 100) : 0))}%` }} />
+                  </div>
+                  <span className="text-sm font-semibold text-green-600 whitespace-nowrap">
+                    {data.summary.completedDays ?? 0} / {data.summary.totalDays ?? 0} 天
+                    {data.summary.percentage !== undefined && ` (${data.summary.percentage}%)`}
+                  </span>
+                </div>
+              )}
+              {data.summary.text && (
+                <p className="text-sm text-gray-600 leading-relaxed">{data.summary.text}</p>
+              )}
+              {!data.summary.text && !data.summary.totalDays && (
+                <p className="text-sm text-gray-600 leading-relaxed">{JSON.stringify(data.summary)}</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 leading-relaxed">{data.summary}</p>
+          )}
         </div>
       )}
       {data.knowledgeGraph && Array.isArray(data.knowledgeGraph) && (
@@ -72,11 +100,10 @@ const ProgressReportRenderer: React.FC<{ content: string }> = ({ content }) => {
               const label = typeof item === 'string' ? item : (item.topic || item.name || JSON.stringify(item))
               const status = typeof item === 'object' ? item.status : null
               return (
-                <span key={i} className={`px-3 py-1.5 rounded-full text-xs font-medium ${
-                  status === 'mastered' ? 'bg-green-100 text-green-700' :
+                <span key={i} className={`px-3 py-1.5 rounded-full text-xs font-medium ${status === 'mastered' ? 'bg-green-100 text-green-700' :
                   status === 'learning' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-gray-100 text-gray-600'
-                }`}>{label}</span>
+                    'bg-gray-100 text-gray-600'
+                  }`}>{label}</span>
               )
             })}
           </div>
@@ -121,12 +148,13 @@ const ProgressReportRenderer: React.FC<{ content: string }> = ({ content }) => {
 }
 
 /** 学习计划 JSON 渲染 */
-const LearningPlanRenderer: React.FC<{ content: string }> = ({ content }) => {
+const LearningPlanRenderer: React.FC<{ content: any }> = ({ content }) => {
   const data = extractJSON(content)
-  if (!data) return <ReactMarkdown>{content}</ReactMarkdown>
+  const textFallback = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+  if (!data) return <ReactMarkdown>{textFallback}</ReactMarkdown>
 
   const days = data.days || (Array.isArray(data) ? data : null)
-  if (!days) return <ReactMarkdown>{content}</ReactMarkdown>
+  if (!days) return <ReactMarkdown>{textFallback}</ReactMarkdown>
 
   return (
     <div className="space-y-4">
@@ -149,7 +177,7 @@ const LearningPlanRenderer: React.FC<{ content: string }> = ({ content }) => {
             </ul>
           )}
           {day.learningObjectives && (
-            <p className="text-xs text-blue-600 ml-10">🎯 {Array.isArray(day.learningObjectives) ? day.learningObjectives.join('、') : day.learningObjectives}</p>
+            <p className="text-xs text-orange-600 ml-10">🎯 {Array.isArray(day.learningObjectives) ? day.learningObjectives.join('、') : day.learningObjectives}</p>
           )}
           {day.knowledgePoints && Array.isArray(day.knowledgePoints) && (
             <div className="flex flex-wrap gap-1 ml-10 mt-1">
@@ -177,7 +205,8 @@ export const ContentViewer: React.FC<ContentViewerProps> = ({ content, onClose }
   const current = allVersions.find(v => v.version === viewingVersion) || allVersions[0]
 
   const handleExport = () => {
-    const blob = new Blob([current.content], { type: 'text/markdown;charset=utf-8' })
+    const textData = typeof current.content === 'string' ? current.content : JSON.stringify(current.content, null, 2);
+    const blob = new Blob([textData], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -186,11 +215,12 @@ export const ContentViewer: React.FC<ContentViewerProps> = ({ content, onClose }
     URL.revokeObjectURL(url)
   }
 
-  const renderContent = (text: string) => {
-    if (content.type === 'mind-map') return <MindMapRenderer markdown={text} />
+  const renderContent = (text: any) => {
+    if (content.type === 'mind-map') return <MindMapRenderer markdown={typeof text === 'string' ? text : JSON.stringify(text, null, 2)} />
     if (content.type === 'progress-report') return <ProgressReportRenderer content={text} />
     if (content.type === 'learning-plan') return <LearningPlanRenderer content={text} />
-    return <ReactMarkdown>{text || '（内容为空）'}</ReactMarkdown>
+    const mdText = typeof text === 'string' ? text : (text ? JSON.stringify(text, null, 2) : '（内容为空）');
+    return <ReactMarkdown>{mdText}</ReactMarkdown>
   }
 
   const fmtDate = (iso: string) => {

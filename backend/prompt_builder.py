@@ -41,11 +41,15 @@ def _find_day(all_days: list[dict], day_number: int | None) -> dict | None:
 _TEMPLATES: dict[str, PromptTemplate] = {
     "study-guide": PromptTemplate(
         role_instruction=(
-            "你是一个学习策略顾问。分析学习者的背景和材料，"
-            "给出宏观学习路线图、知识体系结构和补充材料推荐。"
+            "你是一个学习策略顾问。分析学习者的背景、目标和材料，"
+            "给出个性化的宏观学习路线图、知识体系结构和补充材料推荐。"
         ),
         generation_instruction=(
             "请基于以下材料和学习进度，生成一份宏观学习路线图。\n"
+            "如果提供了学习者画像，必须根据学习者的目的、水平、可用时间来个性化定制内容：\n"
+            "- 根据学习目的调整路线图的侧重方向\n"
+            "- 根据当前水平调整内容深度和起点\n"
+            "- 根据学习周期和每日可用时间调整节奏和范围\n"
             "重点包含：学习路线图、知识体系、补充材料推荐。\n"
             "定位为战略层面，回答「学什么、怎么学」，而非每日任务分解。\n"
             "对已完成的天数做简要回顾，对未完成的天数做详细展开。\n"
@@ -58,11 +62,16 @@ _TEMPLATES: dict[str, PromptTemplate] = {
     ),
     "learning-plan": PromptTemplate(
         role_instruction=(
-            "你是一个学习计划生成器。根据材料和进度，"
-            "生成按天拆分的详细学习计划，每天包含具体任务、验证标准和知识点。"
+            "你是一个学习计划生成器。根据学习者画像、材料和进度，"
+            "生成按天拆分的个性化详细学习计划，每天包含具体任务、验证标准和知识点。"
         ),
         generation_instruction=(
             "请基于以下材料和学习进度，生成一份按天拆分的详细学习计划。\n"
+            "如果提供了学习者画像，必须据此个性化定制：\n"
+            "- 根据学习周期确定总天数\n"
+            "- 根据每日可用时间确定每天任务量\n"
+            "- 根据当前水平调整任务难度和前置知识铺垫\n"
+            "- 根据学习目的确定重点模块和优先级\n"
             "如果已有学习规划（allDays），请基于剩余未完成内容重新规划。\n"
             "如果没有 RAG 材料内容，请生成通用学习计划并建议用户上传材料。\n"
             "每天包含具体任务、验证标准和知识点。"
@@ -188,7 +197,7 @@ class PromptBuilder:
 
         Args:
             content_type: Tool type (e.g. "study-guide", "learning-plan").
-            learning_context: Object with planId, allDays, currentDayNumber attrs.
+            learning_context: Object with planId, allDays, currentDayNumber, learnerProfile attrs.
 
         Returns:
             (user_prompt, system_prompt) tuple.
@@ -199,6 +208,7 @@ class PromptBuilder:
         plan_id = getattr(learning_context, "planId", "") or ""
         all_days = getattr(learning_context, "allDays", None) or []
         current_day_number = getattr(learning_context, "currentDayNumber", None)
+        learner_profile = getattr(learning_context, "learnerProfile", None)
 
         # 1. RAG retrieval with targeted query
         rag_context = self._retrieve_rag(content_type, learning_context)
@@ -206,10 +216,19 @@ class PromptBuilder:
         chat_history = self._get_truncated_history(plan_id)
         # 3. Formatted progress text
         progress_text = self._format_progress(all_days, current_day_number)
-        # 4. Assemble user_prompt (without role_instruction)
-        user_prompt = self._assemble(template, rag_context, chat_history, progress_text)
-        # 5. role_instruction as system_prompt
-        return (user_prompt, template.role_instruction)
+        # 4. Formatted learner profile
+        profile_text = self._format_learner_profile(learner_profile)
+        # 5. Assemble user_prompt (without role_instruction)
+        user_prompt = self._assemble(template, rag_context, chat_history, progress_text, profile_text)
+        
+        # 6. role_instruction as system_prompt with current time
+        from datetime import datetime
+        now = datetime.now()
+        weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        time_str = f"{now.strftime('%Y年%m月%d日 %H:%M:%S')} {weekdays[now.weekday()]}"
+        system_prompt = f"【系统提示：当前真实时间是 {time_str}】\n\n{template.role_instruction}"
+        
+        return (user_prompt, system_prompt)
 
     def _retrieve_rag(self, content_type: str, ctx) -> str:
         """根据工具类型构造针对性 RAG 查询词并检索。
@@ -267,9 +286,14 @@ class PromptBuilder:
         rag_context: str,
         chat_history: list[dict],
         progress_text: str,
+        profile_text: str = "",
     ) -> str:
         """Compose final user_prompt from sections separated by ---."""
         sections: list[str] = []
+
+        # 0. Learner profile (highest priority context)
+        if profile_text:
+            sections.append(f"[学习者画像]\n{profile_text}")
 
         # 1. RAG context (skip for progress-report — already handled by empty rag_context)
         if rag_context:
@@ -295,6 +319,30 @@ class PromptBuilder:
         sections.append(f"[输出格式指令]\n{template.output_format}")
 
         return "\n---\n".join(sections)
+
+    def _format_learner_profile(self, profile) -> str:
+        """将学习者画像格式化为可注入 prompt 的文本。"""
+        if not profile:
+            return ""
+        lines = []
+        goal = getattr(profile, "goal", "") or ""
+        duration = getattr(profile, "duration", "") or ""
+        level = getattr(profile, "level", "") or ""
+        background = getattr(profile, "background", "") or ""
+        daily_hours = getattr(profile, "dailyHours", "") or getattr(profile, "daily_hours", "") or ""
+
+        if goal:
+            lines.append(f"学习目的：{goal}")
+        if duration:
+            lines.append(f"学习周期：{duration}")
+        if level:
+            lines.append(f"当前水平：{level}")
+        if background:
+            lines.append(f"个人背景：{background}")
+        if daily_hours:
+            lines.append(f"每日可用时间：{daily_hours}")
+
+        return "\n".join(lines) if lines else ""
 
     def _build_rag_query(self, content_type: str, ctx) -> str:
         """根据工具类型和学习上下文构造 RAG 查询词。"""

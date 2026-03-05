@@ -4,7 +4,7 @@ import type { LearningPlan } from '../../types'
 
 // 渐变封面色，更有视觉冲击力
 const COVER_GRADIENTS = [
-  'from-blue-400 to-indigo-600',
+  'from-orange-400 to-indigo-600',
   'from-orange-400 to-red-500',
   'from-emerald-400 to-teal-600',
   'from-purple-400 to-pink-500',
@@ -24,7 +24,7 @@ export const FeaturedPlans: React.FC = () => {
     <section>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-semibold text-[#202124]">精选学习规划</h2>
-        <button className="text-sm text-[#1A73E8] hover:underline">查看全部 ▶</button>
+        <button className="text-sm text-[#D97757] hover:underline">查看全部 ▶</button>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin">
         {FEATURED.map((plan, i) => (

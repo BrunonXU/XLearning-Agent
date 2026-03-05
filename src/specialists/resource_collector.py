@@ -26,6 +26,9 @@ COMMENT_FINGERPRINT_LEN = 30
 # 评论上限
 MAX_COMMENTS = 10
 
+# GitHub 基础 URL，用于将相对路径转为完整 URL
+GITHUB_BASE_URL = "https://github.com"
+
 
 class ResourceCollector:
     """从浏览器页面提取结构化资源数据"""
@@ -51,6 +54,13 @@ class ResourceCollector:
 
                     desc_el = await item.query_selector(config.description_selector)
                     description = (await desc_el.inner_text()).strip() if desc_el else ""
+
+                    # GitHub URL 修正：跳过空 URL，相对 URL 补全为完整 URL
+                    if config.name == "github":
+                        if not url:
+                            continue
+                        if url.startswith("/"):
+                            url = GITHUB_BASE_URL + url
 
                     if not title and not url:
                         continue

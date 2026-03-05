@@ -75,12 +75,22 @@ _TITLES = {
 }
 
 
+class LearnerProfileRequest(BaseModel):
+    """学习者画像"""
+    goal: str = ""
+    duration: str = ""
+    level: str = ""
+    background: str = ""
+    dailyHours: str = ""
+
+
 class StudioRequest(BaseModel):
     """HTTP request body for Studio content generation.
     Also serves as the LearningContext for PromptBuilder."""
     planId: str = ""
     allDays: list[dict] = []
     currentDayNumber: Optional[int] = None
+    learnerProfile: Optional[LearnerProfileRequest] = None
 
 
 # Alias for clarity when used as internal context by PromptBuilder
@@ -110,10 +120,23 @@ async def generate_studio_content(content_type: str, body: StudioRequest):
 
     try:
         ctx = get_session(body.planId)
+        # Load learner profile: prefer request body, fallback to DB
+        learner_profile = body.learnerProfile
+        if not learner_profile and body.planId:
+            profile_data = database.get_learner_profile(body.planId)
+            if profile_data:
+                learner_profile = LearnerProfileRequest(
+                    goal=profile_data.get("goal", ""),
+                    duration=profile_data.get("duration", ""),
+                    level=profile_data.get("level", ""),
+                    background=profile_data.get("background", ""),
+                    dailyHours=profile_data.get("dailyHours", ""),
+                )
         learning_context = LearningContext(
             planId=body.planId,
             allDays=body.allDays,
             currentDayNumber=body.currentDayNumber,
+            learnerProfile=learner_profile,
         )
         builder = PromptBuilder(rag_engine=ctx.tutor.rag_engine)
         user_prompt, system_prompt = builder.build(content_type, learning_context)
@@ -189,7 +212,18 @@ async def generate_studio_content_internal(content_type: str, plan_id: str) -> d
         return {}
 
     ctx = get_session(plan_id)
-    learning_context = LearningContext(planId=plan_id)
+    # Load learner profile from DB for internal calls
+    profile_data = database.get_learner_profile(plan_id)
+    learner_profile = None
+    if profile_data:
+        learner_profile = LearnerProfileRequest(
+            goal=profile_data.get("goal", ""),
+            duration=profile_data.get("duration", ""),
+            level=profile_data.get("level", ""),
+            background=profile_data.get("background", ""),
+            dailyHours=profile_data.get("dailyHours", ""),
+        )
+    learning_context = LearningContext(planId=plan_id, learnerProfile=learner_profile)
     builder = PromptBuilder(rag_engine=ctx.tutor.rag_engine)
     title = _TITLES.get(content_type, content_type)
 
@@ -217,6 +251,58 @@ async def generate_studio_content_internal(content_type: str, plan_id: str) -> d
             pass
 
     return {"type": content_type, "title": title, "content": content, "createdAt": now}
+
+
+# ---------------------------------------------------------------------------
+# Learner Profile endpoints
+# ---------------------------------------------------------------------------
+
+class LearnerProfileResponse(BaseModel):
+    planId: str
+    goal: str = ""
+    duration: str = ""
+    level: str = ""
+    background: str = ""
+    dailyHours: str = ""
+
+
+@router.get("/learner-profile/{plan_id}", response_model=LearnerProfileResponse)
+async def get_learner_profile(plan_id: str):
+    """获取学习者画像"""
+    profile = database.get_learner_profile(plan_id)
+    if not profile:
+        return LearnerProfileResponse(planId=plan_id)
+    return LearnerProfileResponse(
+        planId=plan_id,
+        goal=profile.get("goal", ""),
+        duration=profile.get("duration", ""),
+        level=profile.get("level", ""),
+        background=profile.get("background", ""),
+        dailyHours=profile.get("dailyHours", ""),
+    )
+
+
+@router.put("/learner-profile/{plan_id}", response_model=LearnerProfileResponse)
+async def save_learner_profile(plan_id: str, body: LearnerProfileRequest):
+    """保存/更新学习者画像"""
+    profile_id = str(uuid.uuid4())
+    database.upsert_learner_profile({
+        "id": profile_id,
+        "planId": plan_id,
+        "goal": body.goal,
+        "duration": body.duration,
+        "level": body.level,
+        "background": body.background,
+        "dailyHours": body.dailyHours,
+    })
+    return LearnerProfileResponse(
+        planId=plan_id,
+        goal=body.goal,
+        duration=body.duration,
+        level=body.level,
+        background=body.background,
+        dailyHours=body.dailyHours,
+    )
 
 
 def _fallback_content(content_type: str) -> str:

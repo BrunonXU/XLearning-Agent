@@ -126,12 +126,12 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
         </div>
       )}
 
-      <div className={`flex items-center h-[68px] px-6 border-b border-[#E0E0E0] flex-shrink-0 transition-all ${isCollapsed ? 'justify-center px-0 flex-col gap-0 border-b-0 h-[68px]' : 'justify-between'}`}>
+      <div className={`flex items-center h-[68px] px-8 flex-shrink-0 transition-all ${isCollapsed ? 'justify-center px-0 flex-col gap-0 h-[68px]' : 'justify-between'}`}>
         {!isCollapsed && (
-          <span className="text-base font-semibold text-[#202124] flex items-center gap-2">
+          <span className="text-base font-semibold text-[#202124] flex items-center gap-2 mt-2">
             学习材料
             {materials.length > 0 && (
-              <span className="text-xs bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-medium">
+              <span className="text-xs bg-[#F2DFD3] text-[#D97757] px-2 py-0.5 rounded-full font-medium">
                 {materials.length}
               </span>
             )}
@@ -141,7 +141,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
           <button
             aria-label={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
             onClick={onToggleCollapse}
-            className="w-10 h-10 flex items-center justify-center rounded-xl text-[#5F6368] hover:bg-[#F1F3F4] transition-colors duration-150"
+            className="w-10 h-10 flex items-center justify-center rounded-xl text-[#5F6368] hover:bg-[#EFECE5] transition-colors duration-150"
           >
             {isCollapsed ? (
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
@@ -158,7 +158,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 h-9 rounded-lg text-sm font-medium transition-all duration-150 ${activeTab === tab ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'text-[#5F6368] hover:bg-[#F1F3F4]'
+              className={`flex-1 h-9 rounded-lg text-sm font-medium transition-all duration-150 ${activeTab === tab ? 'bg-[#F2DFD3] text-[#D97757]' : 'text-[#5F6368] hover:bg-[#EFECE5]'
                 }`}
             >
               {tab === 'upload' ? '➕ 上传文件' : '🔍 搜索资源'}
@@ -170,7 +170,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
       <div className={`flex-1 overflow-y-auto scrollbar-thin ${isCollapsed ? 'py-4' : 'px-6 pb-6'}`}>
         {isCollapsed ? (
           <ul className="flex flex-col items-center gap-4 w-full relative">
-            <li className="w-10 h-10 flex items-center justify-center rounded-full text-[#5F6368] hover:bg-[#F1F3F4] transition-colors duration-150 cursor-pointer text-2xl"
+            <li className="w-10 h-10 flex items-center justify-center rounded-full text-[#5F6368] hover:bg-[#EFECE5] transition-colors duration-150 cursor-pointer text-2xl"
               onClick={onToggleCollapse}>
               +
             </li>
@@ -180,7 +180,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
                 onMouseLeave={() => setHoveredFile(null)}
                 className="group relative flex items-center justify-center w-full focus:outline-none">
 
-                <div className={`w-12 h-12 flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 ${selectedId === m.id ? 'bg-[#E8F0FE]' : 'hover:bg-[#F1F3F4]'
+                <div className={`w-12 h-12 flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 ${selectedId === m.id ? 'bg-[#F2DFD3]' : 'hover:bg-[#EFECE5]'
                   }`}>
                   <MaterialIcon material={m} className="w-7 h-8 text-[10px]" />
                 </div>

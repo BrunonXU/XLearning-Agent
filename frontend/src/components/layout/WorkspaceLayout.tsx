@@ -19,15 +19,15 @@ const MIN_LEFT_READING = 28
 const MAX_LEFT_READING = 45
 const READING_LEFT = 35
 const MIN_CENTER = 30
-const MIN_RIGHT = 18
+const MIN_RIGHT = 22
 
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
   left, center, right, topNav, isReading = false, isLeftCollapsed = false, isRightCollapsed = false,
 }) => {
-  const [leftPct, setLeftPct] = useState(22)
-  const [rightPct, setRightPct] = useState(18)
+  const [leftPct, setLeftPct] = useState(20)
+  const [rightPct, setRightPct] = useState(30)
   const prevReadingRef = useRef(isReading)
-  const savedLeftRef = useRef(22)
+  const savedLeftRef = useRef(20)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // 进入/退出阅读模式时自动调整左侧宽度
@@ -91,25 +91,25 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     document.addEventListener('mouseup', onUp)
   }, [leftPct, rightPct])
 
-  // 动态背景色：根据折叠的侧边栏数量变深，加大色阶落差
+  // 主体背景色：根据折叠侧边栏数量变深，应用于最底层的承载背景
   const collapsedCount = (isLeftCollapsed ? 1 : 0) + (isRightCollapsed ? 1 : 0)
-  let bgClass = 'bg-[#E6DDF2]' // 0个折叠：浅香芋紫（基调）
-  if (collapsedCount === 1) bgClass = 'bg-[#D3CFDC]' // 1个折叠：偏暗的灰紫色
-  if (collapsedCount === 2) bgClass = 'bg-[#A8A0B8]' // 2个折叠：非常明显的深灰紫，进入沉浸黑夜环境
+  let appBgClass = 'bg-[#F9F8F6]' // 0个折叠：浅米白
+  if (collapsedCount === 1) appBgClass = 'bg-[#EFECE5]' // 1个折叠：稍深的燕麦色
+  if (collapsedCount === 2) appBgClass = 'bg-[#E3DFD5]' // 2个折叠：质感暖灰
 
   return (
-    <div className={`flex flex-col h-screen overflow-hidden ${bgClass} transition-colors duration-500 dark:bg-dark-bg`}>
+    <div className={`flex flex-col h-screen overflow-hidden ${appBgClass} transition-colors duration-500 dark:bg-dark-bg`}>
       <div className="flex-shrink-0 bg-transparent px-4 py-2">
         {topNav}
       </div>
       <div
         ref={containerRef}
-        className="flex flex-1 overflow-hidden px-4 pb-4 gap-2"
+        className="flex flex-1 overflow-hidden px-3 pb-3 gap-[10px]"
         style={{ height: 'calc(100vh - 80px)' }}
       >
         {/* 左侧面板 */}
         <div
-          className={`flex flex-col overflow-hidden bg-white dark:bg-dark-surface flex-shrink-0 rounded-3xl shadow-soft ${isLeftCollapsed ? 'transition-all duration-300' : ''}`}
+          className={`flex flex-col overflow-hidden bg-white border border-[#E5E5E5] dark:bg-dark-surface flex-shrink-0 rounded-2xl shadow-soft ${isLeftCollapsed ? 'transition-all duration-300' : ''}`}
           style={{ width: isLeftCollapsed ? '72px' : `calc(${leftPct}% - 8px)` }}
         >
           {left}
@@ -127,13 +127,13 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
             aria-orientation="vertical"
             aria-label="调整左侧面板宽度"
           >
-            <div className="w-[4px] h-12 rounded-full bg-[#E0E0E0] opacity-0 group-hover:opacity-100 group-hover:bg-[#1A73E8] transition-all duration-150" />
+            <div className="w-[4px] h-12 rounded-full bg-[#E0E0E0] opacity-0 group-hover:opacity-100 group-hover:bg-[#D97757] transition-all duration-150" />
           </div>
         )}
 
         {/* 中间对话区 */}
         <div
-          className="flex flex-col overflow-hidden bg-white dark:bg-dark-bg flex-shrink-0 rounded-3xl shadow-soft flex-1 min-w-0"
+          className="flex flex-col overflow-hidden bg-white border border-[#E5E5E5] dark:bg-dark-bg flex-shrink-0 rounded-2xl shadow-soft flex-1 min-w-0"
         >
           {center}
         </div>
@@ -150,13 +150,13 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
             aria-orientation="vertical"
             aria-label="调整右侧面板宽度"
           >
-            <div className="w-[4px] h-12 rounded-full bg-[#E0E0E0] opacity-0 group-hover:opacity-100 group-hover:bg-[#1A73E8] transition-all duration-150" />
+            <div className="w-[4px] h-12 rounded-full bg-[#E0E0E0] opacity-0 group-hover:opacity-100 group-hover:bg-[#D97757] transition-all duration-150" />
           </div>
         )}
 
         {/* 右侧 Studio 面板 */}
         <div
-          className={`flex flex-col overflow-hidden bg-white dark:bg-dark-surface flex-shrink-0 rounded-3xl shadow-soft ${isRightCollapsed ? 'transition-all duration-300' : ''}`}
+          className={`flex flex-col overflow-hidden bg-white border border-[#E5E5E5] dark:bg-dark-surface flex-shrink-0 rounded-2xl shadow-soft ${isRightCollapsed ? 'transition-all duration-300' : ''}`}
           style={{ width: isRightCollapsed ? '72px' : `calc(${rightPct}% - 8px)` }}
         >
           {right}

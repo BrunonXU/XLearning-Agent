@@ -67,11 +67,10 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ planId }) => {
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-150 ${
-          dragging
-            ? 'border-[#1A73E8] bg-[#E8F0FE]'
-            : 'border-[#DADCE0] hover:border-[#1A73E8] hover:bg-[#F8F9FA]'
-        }`}
+        className={`flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-150 ${dragging
+            ? 'border-[#D97757] bg-[#F2DFD3]'
+            : 'border-[#DADCE0] hover:border-[#D97757] hover:bg-[#F8F9FA]'
+          }`}
         role="button"
         aria-label="点击或拖拽上传文件（PDF、MD、TXT）"
       >
@@ -97,14 +96,14 @@ export const UploadArea: React.FC<UploadAreaProps> = ({ planId }) => {
           onChange={e => setUrlInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleUrlSubmit()}
           placeholder="粘贴 GitHub / 网页 URL..."
-          className="flex-1 h-10 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
+          className="flex-1 h-10 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#D97757]/30 focus:border-[#D97757] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
           aria-label="粘贴 URL"
         />
         <button
           onClick={handleUrlSubmit}
           disabled={!urlInput.trim() || uploading}
           aria-label="添加 URL"
-          className="h-10 px-4 bg-[#1A73E8] text-white rounded-lg text-sm hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150"
+          className="h-10 px-4 bg-[#D97757] text-white rounded-lg text-sm hover:bg-[#C06144] disabled:opacity-40 transition-colors duration-150"
         >
           添加
         </button>

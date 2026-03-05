@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { LearningPlan } from '../../types'
 
 const COVER_COLORS = [
-  '#E8F0FE', '#FFF7ED', '#F0FDF4', '#FDF4FF', '#FFF1F2', '#F0F9FF',
+  '#F2DFD3', '#FFF7ED', '#F0FDF4', '#FDF4FF', '#FFF1F2', '#F0F9FF',
 ]
 const COVER_ICONS = ['📚', '🧠', '💡', '🔬', '🎯', '⚡']
 
@@ -25,7 +25,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
 
   return (
     <div
-      className="relative rounded-3xl border border-black/5 shadow-soft hover:shadow-md hover:-translate-y-1 transition-all duration-200 cursor-pointer overflow-hidden group bg-white"
+      className="relative rounded-2xl border border-[#E5E5E5] shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-200 cursor-pointer overflow-hidden group bg-white"
       onClick={() => navigate(`/workspace/${plan.id}`)}
     >
       {/* 封面色块 */}
@@ -37,9 +37,9 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
       </div>
 
       {/* 信息区 */}
-      <div className="px-5 py-4">
-        <p className="text-base font-semibold text-[#202124] truncate mb-1">{plan.title}</p>
-        <p className="text-sm text-[#5F6368]">
+      <div className="px-4 py-3">
+        <p className="text-[15px] font-semibold text-[#1A1A18] truncate mb-1">{plan.title}</p>
+        <p className="text-xs text-[#8C8C87]">
           {plan.sourceCount} 个来源 · {formatDate(plan.lastAccessedAt)}
         </p>
       </div>
@@ -47,7 +47,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
       {/* 三点菜单 */}
       <button
         aria-label="更多操作"
-        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 shadow-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:bg-white text-[#5F6368]"
+        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 border border-[#E5E5E5] shadow-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:bg-white text-[#8C8C87]"
         onClick={e => { e.stopPropagation(); setMenuOpen(m => !m) }}
       >
         ⋮
@@ -55,7 +55,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
 
       {menuOpen && (
         <div
-          className="absolute top-12 right-3 bg-white rounded-xl shadow-xl border border-[#DADCE0] z-10 py-1 min-w-[110px]"
+          className="absolute top-10 right-2 bg-white rounded-xl shadow-xl border border-[#E5E5E5] z-10 py-1 min-w-[110px]"
           onClick={e => e.stopPropagation()}
         >
           {[
@@ -66,7 +66,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, onRename, onDelete }) 
             <button
               key={item.label}
               onClick={item.action}
-              className={`w-full text-left px-4 py-2 text-sm hover:bg-[#F1F3F4] transition-colors duration-150 ${item.danger ? 'text-red-500' : 'text-[#202124]'}`}
+              className={`w-full text-left px-4 py-2 text-sm hover:bg-[#F0EDE8] transition-colors duration-150 ${item.danger ? 'text-red-500' : 'text-[#1A1A18]'}`}
             >
               {item.label}
             </button>

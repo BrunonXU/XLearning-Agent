@@ -13,9 +13,9 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool, onClick, isLoading }) 
     onClick={onClick}
     disabled={isLoading}
     className="h-20 bg-white rounded-xl border border-[#DADCE0] shadow-sm flex flex-col items-center justify-center gap-1.5
-               hover:shadow-md hover:border-[#1A73E8] hover:-translate-y-0.5
+               hover:shadow-md hover:border-[#D97757] hover:-translate-y-0.5
                cursor-pointer transition-all duration-150 active:scale-95
-               focus-visible:ring-2 focus-visible:ring-[#1A73E8] outline-none"
+               focus-visible:ring-2 focus-visible:ring-[#D97757] outline-none"
     aria-label={tool.label}
   >
     {isLoading ? (

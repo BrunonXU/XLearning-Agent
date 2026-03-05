@@ -116,7 +116,7 @@ class BrowserAgent:
 
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
-                headless="new" if hidden_mode else False,  # 隐藏模式用新版 headless，登录时弹窗
+                headless=hidden_mode,  # True=无头模式（新版Playwright默认用新引擎），False=弹窗登录
                 args=launch_args,
             )
 

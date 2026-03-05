@@ -14,8 +14,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div className="bg-[#E8F0FE] text-[#202124] rounded-3xl rounded-tr-sm px-6 py-4 max-w-[72%] shadow-sm">
+      <div className="flex justify-end mt-2 mb-4">
+        <div className="bg-[#F3F4F6] text-[#202124] rounded-2xl px-5 py-3.5 max-w-[72%]">
           <p className="text-[16px] leading-relaxed whitespace-pre-wrap">{message.content}</p>
         </div>
       </div>
@@ -23,15 +23,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
   }
 
   return (
-    <div className="flex flex-col gap-2 max-w-[95%]">
-      <div className="bg-[#F1F3F4] text-[#202124] rounded-3xl rounded-tl-sm px-6 py-4 shadow-sm w-fit max-w-[85%]">
+    <div className="flex flex-col gap-2 max-w-[95%] mb-6">
+      <div className="text-[#202124] w-fit max-w-[90%] pb-2">
         {isStreaming && !message.content ? (
           <TypingIndicator />
         ) : (
-          <div className="prose max-w-none text-[#202124] leading-relaxed prose-p:my-2 prose-headings:my-4 prose-li:my-1 prose-code:bg-white/60 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-pre:bg-white prose-pre:rounded-2xl prose-pre:border prose-pre:border-black/5 text-[16px]">
+          <div className="prose max-w-none text-[#202124] leading-8 prose-p:my-5 prose-headings:my-6 prose-li:my-3 prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-pre:bg-[#1E1E1E] prose-pre:text-gray-100 prose-pre:rounded-xl prose-pre:border-none text-[17px] tracking-wide">
             <ReactMarkdown>{message.content}</ReactMarkdown>
             {isStreaming && (
-              <span className="inline-block w-0.5 h-[1em] bg-[#1A73E8] animate-pulse ml-1 align-middle" />
+              <span className="inline-block w-0.5 h-[1em] bg-[#D97757] animate-pulse ml-1 align-middle" />
             )}
           </div>
         )}

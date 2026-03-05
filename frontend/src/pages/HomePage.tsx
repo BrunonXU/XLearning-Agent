@@ -12,7 +12,7 @@ type FilterTab = 'all' | 'featured'
 type CreateMode = 'pdf' | 'link' | 'topic' | null
 
 const COVER_COLORS = [
-  'from-blue-400 to-indigo-600',
+  'from-orange-400 to-indigo-600',
   'from-orange-400 to-pink-500',
   'from-green-400 to-teal-500',
   'from-purple-400 to-violet-600',
@@ -102,20 +102,20 @@ const HomePage: React.FC = () => {
   )
 
   return (
-    <div className="min-h-screen bg-[#F0F4F9] dark:bg-dark-bg">
+    <div className="min-h-screen bg-[#F9F8F6] dark:bg-dark-bg">
       {/* 顶部导航 */}
-      <header className="h-14 border-b border-[#DADCE0] dark:border-dark-border flex items-center px-6 justify-between bg-white dark:bg-dark-bg">
+      <header className="h-14 border-b border-[#E5E5E5] dark:border-dark-border flex items-center px-6 justify-between bg-white dark:bg-dark-bg">
         <div className="flex items-center gap-2">
           <span className="text-xl" aria-hidden="true">⚛</span>
-          <span className="text-lg font-semibold text-[#202124] dark:text-dark-text">XLearning</span>
+          <span className="text-lg font-semibold text-[#1A1A18] dark:text-dark-text">XLearning</span>
         </div>
         <div className="flex items-center gap-2">
-          <button aria-label="设置" className="w-8 h-8 flex items-center justify-center rounded-full text-[#5F6368] hover:bg-[#F1F3F4] transition-colors duration-150">⚙️</button>
-          <button aria-label="用户头像" className="w-8 h-8 rounded-full bg-[#1A73E8] text-white text-sm font-medium flex items-center justify-center">U</button>
+          <button aria-label="设置" className="w-8 h-8 flex items-center justify-center rounded-full text-[#8C8C87] hover:bg-[#F0EDE8] transition-colors duration-150">⚙️</button>
+          <button aria-label="用户头像" className="w-8 h-8 rounded-full bg-[#D97757] text-white text-sm font-medium flex items-center justify-center">U</button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-6">
+      <main className="max-w-6xl mx-auto px-8 py-8">
         {/* 10.2: 精选规划横向滚动 */}
         <div className="mb-8">
           <FeaturedPlans />
@@ -123,14 +123,14 @@ const HomePage: React.FC = () => {
 
         {/* 筛选栏 + 视图切换 */}
         <div className="flex items-center justify-between mb-5">
-          <div className="flex gap-1 border-b border-[#DADCE0]">
+          <div className="flex gap-1">
             {(['all', 'featured'] as FilterTab[]).map(tab => (
               <button
                 key={tab}
                 onClick={() => setFilterTab(tab)}
-                className={`px-4 py-2 text-sm transition-all duration-150 ${filterTab === tab
-                  ? 'border-b-2 border-[#1A73E8] text-[#1A73E8] font-medium'
-                  : 'text-[#5F6368] hover:text-[#202124]'
+                className={`px-4 py-1.5 text-sm rounded-full transition-all duration-150 ${filterTab === tab
+                    ? 'bg-[#F0EDE8] text-[#D97757] font-medium'
+                    : 'text-[#8C8C87] hover:text-[#1A1A18] hover:bg-[#F0EDE8]/50'
                   }`}
               >
                 {tab === 'all' ? '全部' : '精选笔记本'}
@@ -143,7 +143,7 @@ const HomePage: React.FC = () => {
               onClick={() => setViewMode('grid')}
               aria-label="网格视图"
               aria-pressed={viewMode === 'grid'}
-              className={`px-2 py-1 rounded text-sm transition-colors duration-150 ${viewMode === 'grid' ? 'text-[#1A73E8]' : 'text-[#5F6368] hover:text-[#202124]'}`}
+              className={`px-2 py-1 rounded text-sm transition-colors duration-150 ${viewMode === 'grid' ? 'text-[#D97757]' : 'text-[#8C8C87] hover:text-[#1A1A18]'}`}
             >
               ⊞ 网格
             </button>
@@ -151,13 +151,13 @@ const HomePage: React.FC = () => {
               onClick={() => setViewMode('list')}
               aria-label="列表视图"
               aria-pressed={viewMode === 'list'}
-              className={`px-2 py-1 rounded text-sm transition-colors duration-150 ${viewMode === 'list' ? 'text-[#1A73E8]' : 'text-[#5F6368] hover:text-[#202124]'}`}
+              className={`px-2 py-1 rounded text-sm transition-colors duration-150 ${viewMode === 'list' ? 'text-[#D97757]' : 'text-[#8C8C87] hover:text-[#1A1A18]'}`}
             >
               ≡ 列表
             </button>
             <button
               onClick={() => setModalOpen(true)}
-              className="ml-2 bg-[#1A73E8] text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-[#1557B0] active:scale-95 transition-all duration-150"
+              className="ml-2 bg-[#D97757] text-white rounded-xl px-4 py-2 text-sm font-medium hover:bg-[#C06144] active:scale-95 transition-all duration-150"
             >
               + 新建
             </button>
@@ -174,24 +174,24 @@ const HomePage: React.FC = () => {
         ) : sortedPlans.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <span className="text-6xl mb-4" aria-hidden="true">📖</span>
-            <p className="text-[#5F6368] mb-6 text-base">还没有学习规划，创建第一个吧</p>
+            <p className="text-[#8C8C87] mb-6 text-base">还没有学习规划，创建第一个吧</p>
             <button
               onClick={() => setModalOpen(true)}
-              className="bg-[#1A73E8] text-white rounded-lg px-6 py-2.5 text-sm font-medium hover:bg-[#1557B0] transition-colors duration-150"
+              className="bg-[#D97757] text-white rounded-xl px-6 py-2.5 text-sm font-medium hover:bg-[#C06144] transition-colors duration-150"
             >
               + 新建学习规划
             </button>
           </div>
         ) : (
           <section>
-            <h2 className="text-sm font-semibold text-[#202124] dark:text-dark-text mb-3">
-              最近打开的学习规划
+            <h2 className="text-sm font-semibold text-[#8C8C87] uppercase tracking-wider dark:text-dark-text mb-3">
+              最近打开
             </h2>
             <div className={viewMode === 'grid' ? 'grid grid-cols-4 gap-4' : 'flex flex-col gap-2'}>
               {/* 新建卡片 */}
               <button
                 onClick={() => setModalOpen(true)}
-                className="h-[180px] rounded-xl border-2 border-dashed border-[#DADCE0] hover:border-[#1A73E8] hover:bg-[#E8F0FE]/30 transition-all duration-150 flex flex-col items-center justify-center gap-2 text-[#5F6368] hover:text-[#1A73E8]"
+                className="h-[180px] rounded-2xl border-2 border-dashed border-[#E5E5E5] hover:border-[#D97757] hover:bg-[#FDF5F2] transition-all duration-200 flex flex-col items-center justify-center gap-2 text-[#B0B5BA] hover:text-[#D97757]"
                 aria-label="新建学习规划"
               >
                 <span className="text-3xl" aria-hidden="true">+</span>
@@ -201,14 +201,14 @@ const HomePage: React.FC = () => {
               {sortedPlans.map(plan => (
                 renamingId === plan.id ? (
                   // 内联重命名
-                  <div key={plan.id} className="rounded-xl border-2 border-[#1A73E8] p-3 flex flex-col justify-center bg-white">
+                  <div key={plan.id} className="rounded-xl border-2 border-[#D97757] p-3 flex flex-col justify-center bg-white">
                     <input
                       autoFocus
                       value={renameValue}
                       onChange={e => setRenameValue(e.target.value)}
                       onBlur={commitRename}
                       onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingId(null) }}
-                      className="text-sm font-semibold text-[#202124] border-b border-[#1A73E8] outline-none bg-transparent"
+                      className="text-sm font-semibold text-[#202124] border-b border-[#D97757] outline-none bg-transparent"
                       aria-label="重命名规划"
                     />
                     <p className="text-xs text-[#5F6368] mt-1">按 Enter 确认，Esc 取消</p>

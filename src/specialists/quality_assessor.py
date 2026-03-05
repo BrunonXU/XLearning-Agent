@@ -164,7 +164,20 @@ class QualityAssessor:
 
         items_block = "\n\n".join(entries)
 
+        platform_guidance = """评分公平性指引：
+- 小红书：有正文+评论+图片，数据最丰富，可做精准判断
+- B站/YouTube：主要依据标题+描述+互动数据，视频内容无法直接评估
+- GitHub：依据标题+描述+README，关注项目实用性和学习价值
+- Google：仅有标题+描述+页面摘要，信息最少
+
+重要：不同平台数据丰富度不同，但评分标准统一。
+数据少的平台不应因信息不足而被系统性低估。
+评估维度：知识密度、实用性、教学质量、可操作性。
+不要因为互动数据高就给高分，关注内容本身的学习价值。"""
+
         prompt = f"""请逐条评估以下 {len(items)} 条学习资源的质量，从学习者视角提取有用信息。
+
+{platform_guidance}
 
 {items_block}
 

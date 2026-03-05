@@ -58,7 +58,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, planId, onSave, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl w-[680px] max-h-[80vh] flex flex-col overflow-hidden">
+      <div className="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl w-[680px] min-h-[500px] max-h-[80vh] flex flex-col overflow-hidden">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#DADCE0] dark:border-dark-border">
           <input
@@ -91,7 +91,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, planId, onSave, on
           <button
             onClick={handleAiOrganize}
             disabled={isAiOrganizing || !content.trim()}
-            className="flex items-center gap-1.5 text-sm text-[#1A73E8] hover:underline disabled:opacity-40 disabled:no-underline transition-all duration-150"
+            className="flex items-center gap-1.5 text-sm text-[#D97757] hover:underline disabled:opacity-40 disabled:no-underline transition-all duration-150"
             aria-label="AI 整理笔记"
           >
             {isAiOrganizing ? <Spinner size="sm" /> : <span>✨</span>}
@@ -107,7 +107,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, planId, onSave, on
             <button
               onClick={handleSave}
               disabled={isSaving || !title.trim()}
-              className="h-8 px-4 rounded-lg text-sm bg-[#1A73E8] text-white hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150 flex items-center gap-1.5"
+              className="h-8 px-4 rounded-lg text-sm bg-[#D97757] text-white hover:bg-[#C06144] disabled:opacity-40 transition-colors duration-150 flex items-center gap-1.5"
             >
               {isSaving && <Spinner size="sm" />}
               保存

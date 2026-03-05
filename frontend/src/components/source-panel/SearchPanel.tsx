@@ -9,6 +9,7 @@
  * - 新搜索时取消当前进行中的搜索
  * - 结果按 qualityScore 降序统一排序，不按平台分组
  * - 勾选结果 + "加入学习材料"按钮
+ * - 搜索状态存在 store 中，组件卸载后 SSE 继续跑，重新挂载时恢复
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { SearchResultItem } from './SearchResultItem'
@@ -51,19 +52,51 @@ interface SearchPanelProps {
   onAddToMaterials: (results: SearchResult[]) => void
 }
 
+/** 解析 SSE done 事件中的结果列表 */
+function parseResults(evt: any): SearchResult[] {
+  return (evt.results ?? [])
+    .map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      url: item.url,
+      platform: item.platform as PlatformType,
+      description: item.description ?? '',
+      qualityScore: item.qualityScore ?? 0,
+      recommendationReason: item.recommendationReason ?? '',
+      contentSummary: item.contentSummary,
+      commentSummary: item.commentSummary,
+      engagementMetrics: item.engagementMetrics,
+      imageUrls: item.imageUrls,
+      topComments: item.topComments,
+    }))
+    .sort((a: SearchResult, b: SearchResult) => b.qualityScore - a.qualityScore)
+}
+
 export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMaterials }) => {
   const [query, setQuery] = useState('')
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<PlatformType>>(new Set())
-  const [results, setResults] = useState<SearchResult[]>([])
   const [checked, setChecked] = useState<Set<string>>(new Set())
-  const [searchStage, setSearchStage] = useState<SearchStage>('idle')
-  const [stageMessage, setStageMessage] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
-  const [error, setError] = useState('')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const history = useSearchStore(s => s.history)
+  const activeSearch = useSearchStore(s => s.activeSearch)
+
+  // 从 store 派生的状态
+  const results = activeSearch?.results ?? []
+  const searchStage = activeSearch?.stage ?? 'idle'
+  const stageMessage = activeSearch?.stageMessage ?? ''
+  const error = activeSearch?.error ?? ''
+  const isSearching = activeSearch != null
+    && activeSearch.stage !== 'idle'
+    && activeSearch.stage !== 'done'
+    && activeSearch.stage !== 'error'
+
+  // 组件挂载时，如果有已完成的搜索结果，恢复 query
+  useEffect(() => {
+    if (activeSearch?.query && activeSearch.stage === 'done') {
+      setQuery(activeSearch.query)
+    }
+  }, [])
 
   const togglePlatform = (p: PlatformType) => {
     setSelectedPlatforms(prev => {
@@ -76,35 +109,54 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return
 
-    // 取消当前进行中的搜索（允许新搜索覆盖旧搜索）
-    abortRef.current?.abort()
+    const store = useSearchStore.getState()
+
+    // 取消当前进行中的搜索
+    store.activeSearch?.abortController?.abort()
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
 
-    setError('')
-    setResults([])
-    setChecked(new Set())
-    setSearchStage('idle')
-    setStageMessage('')
-    setIsSearching(true)
+    const abortController = new AbortController()
+    const platforms = selectedPlatforms.size > 0 ? Array.from(selectedPlatforms) : undefined
 
-    abortRef.current = new AbortController()
+    // 初始化 store 中的搜索状态
+    const placeholderId = `search-${Date.now()}`
+    store.setActiveSearch({
+      query: query.trim(),
+      platforms: platforms ?? PLATFORMS.map(p => p.key),
+      stage: 'searching',
+      stageMessage: '正在搜索...',
+      results: [],
+      error: '',
+      abortController,
+    })
+
+    // 立即创建"搜索中..."占位历史条目
+    store.addEntry(planId, {
+      id: placeholderId,
+      query: query.trim(),
+      platforms: platforms ?? PLATFORMS.map(p => p.key),
+      results: [],
+      resultCount: 0,
+      searchedAt: new Date().toISOString(),
+      status: 'searching',
+    })
 
     // 60s 超时
     timeoutRef.current = setTimeout(() => {
-      abortRef.current?.abort()
-      setIsSearching(false)
-      setSearchStage('error')
-      setError('搜索超时，请重试')
+      abortController.abort()
+      useSearchStore.getState().updateActiveSearch({
+        stage: 'error',
+        error: '搜索超时，请重试',
+        abortController: null,
+      })
     }, 60000)
-
-    const platforms = selectedPlatforms.size > 0 ? Array.from(selectedPlatforms) : undefined
 
     try {
       const res = await fetch('/api/search/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, platforms }),
-        signal: abortRef.current.signal,
+        body: JSON.stringify({ query: query.trim(), platforms }),
+        signal: abortController.signal,
       })
 
       if (!res.ok || !res.body) {
@@ -127,77 +179,61 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
           try {
             const evt = JSON.parse(line.slice(6))
             const stage = evt.stage as SearchStage | undefined
+            const update = useSearchStore.getState().updateActiveSearch
 
             if (stage === 'searching') {
-              setSearchStage('searching')
-              setStageMessage(stageToMessage('searching', evt))
+              update({ stage: 'searching', stageMessage: stageToMessage('searching', evt) })
             } else if (stage === 'filtering') {
-              setSearchStage('filtering')
-              setStageMessage(stageToMessage('filtering', evt))
+              update({ stage: 'filtering', stageMessage: stageToMessage('filtering', evt) })
             } else if (stage === 'extracting') {
-              setSearchStage('extracting')
-              setStageMessage(stageToMessage('extracting', evt))
+              update({ stage: 'extracting', stageMessage: stageToMessage('extracting', evt) })
             } else if (stage === 'evaluating') {
-              setSearchStage('evaluating')
-              setStageMessage(stageToMessage('evaluating', evt))
+              update({ stage: 'evaluating', stageMessage: stageToMessage('evaluating', evt) })
             } else if (stage === 'done') {
               if (timeoutRef.current) clearTimeout(timeoutRef.current)
-              setSearchStage('done')
-              setStageMessage('')
-
-              // Parse results and sort by qualityScore descending
-              const items: SearchResult[] = (evt.results ?? [])
-                .map((item: any) => ({
-                  id: item.id,
-                  title: item.title,
-                  url: item.url,
-                  platform: item.platform as PlatformType,
-                  description: item.description ?? '',
-                  qualityScore: item.qualityScore ?? 0,
-                  recommendationReason: item.recommendationReason ?? '',
-                  contentSummary: item.contentSummary,
-                  commentSummary: item.commentSummary,
-                  engagementMetrics: item.engagementMetrics,
-                  imageUrls: item.imageUrls,
-                  topComments: item.topComments,
-                }))
-                .sort((a: SearchResult, b: SearchResult) => b.qualityScore - a.qualityScore)
-
-              setResults(items)
-              setIsSearching(false)
-
-              // Save search history
-              useSearchStore.getState().addEntry(planId, {
-                id: `search-${Date.now()}`,
-                query: query.trim(),
-                platforms: platforms ?? PLATFORMS.map(p => p.key),
+              const items = parseResults(evt)
+              update({
+                stage: 'done',
+                stageMessage: '',
+                results: items,
+                abortController: null,
+              })
+              // 更新占位历史条目为完整结果
+              useSearchStore.getState().updateEntry(placeholderId, {
                 results: items,
                 resultCount: items.length,
-                searchedAt: new Date().toISOString(),
+                status: 'done',
               })
             } else if (stage === 'error') {
               if (timeoutRef.current) clearTimeout(timeoutRef.current)
-              setSearchStage('error')
-              setError(evt.message || '搜索出错')
-              setIsSearching(false)
+              update({
+                stage: 'error',
+                error: evt.message || '搜索出错',
+                abortController: null,
+              })
+              // 更新占位历史条目为失败状态
+              useSearchStore.getState().updateEntry(placeholderId, {
+                status: 'error',
+              })
             }
           } catch { /* 忽略解析错误 */ }
         }
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        setError('搜索失败，请检查网络或重试')
-        setSearchStage('error')
+        useSearchStore.getState().updateActiveSearch({
+          stage: 'error',
+          error: '搜索失败，请检查网络或重试',
+          abortController: null,
+        })
       }
     } finally {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
-      setIsSearching(false)
     }
-  }, [query, selectedPlatforms])
+  }, [query, selectedPlatforms, planId])
 
-  // 清理
+  // 清理：只清 timeout，不 abort SSE（让它在后台继续跑）
   useEffect(() => () => {
-    abortRef.current?.abort()
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
   }, [])
 
@@ -212,7 +248,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
   const handleAdd = () => {
     const selected = results.filter(r => checked.has(r.id))
     onAddToMaterials(selected)
-    setResults([])
+    useSearchStore.getState().setActiveSearch(null)
     setChecked(new Set())
     setQuery('')
   }
@@ -228,14 +264,14 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           placeholder="搜索学习资源..."
-          className="flex-1 h-10 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/30 focus:border-[#1A73E8] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
+          className="flex-1 h-10 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#D97757]/30 focus:border-[#D97757] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
           aria-label="搜索关键词"
         />
         <button
           onClick={handleSearch}
           disabled={!query.trim()}
           aria-label="搜索资源"
-          className="h-10 px-4 bg-[#1A73E8] text-white rounded-lg text-sm hover:bg-[#1557B0] disabled:opacity-40 transition-colors duration-150"
+          className="h-10 px-4 bg-[#D97757] text-white rounded-lg text-sm hover:bg-[#C06144] disabled:opacity-40 transition-colors duration-150"
         >
           {isSearching ? '…' : '🔍'}
         </button>
@@ -250,7 +286,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
             aria-pressed={selectedPlatforms.has(p.key)}
             className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-sm font-medium transition-all duration-150 ${
               selectedPlatforms.has(p.key)
-                ? 'bg-[#E8F0FE] text-[#1A73E8] border border-[#1A73E8]'
+                ? 'bg-[#F2DFD3] text-[#D97757] border border-[#D97757]'
                 : 'bg-[#F1F3F4] text-[#5F6368] border border-transparent hover:border-[#DADCE0]'
             }`}
           >
@@ -264,9 +300,9 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
       {isActive && stageMessage && (
         <div className="flex items-center gap-2 text-xs text-[#5F6368] py-1">
           <span className="flex gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:0ms]" />
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:100ms]" />
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1A73E8] animate-bounce [animation-delay:200ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#D97757] animate-bounce [animation-delay:0ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#D97757] animate-bounce [animation-delay:100ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#D97757] animate-bounce [animation-delay:200ms]" />
           </span>
           <span>{stageMessage}</span>
         </div>
@@ -305,7 +341,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
       )}
 
       {/* 搜索历史 */}
-      {history.length > 0 && results.length === 0 && !isSearching && (
+      {history.length > 0 && (
         <div className="flex flex-col gap-2 mt-2">
           <p className="text-xs font-medium text-[#5F6368] uppercase tracking-wide">
             搜索历史

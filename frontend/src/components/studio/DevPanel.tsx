@@ -77,7 +77,7 @@ export const DevPanel: React.FC = () => {
   }
 
   const typeColors: Record<string, string> = {
-    chain: 'bg-blue-100 text-blue-700',
+    chain: 'bg-orange-100 text-orange-700',
     llm: 'bg-purple-100 text-purple-700',
     tool: 'bg-green-100 text-green-700',
     retriever: 'bg-orange-100 text-orange-700',
@@ -99,7 +99,7 @@ export const DevPanel: React.FC = () => {
           <span className="font-medium text-[#202124]">🔗 LangSmith</span>
           <button
             onClick={toggleLangSmith}
-            className={`relative w-10 h-5 rounded-full transition-colors duration-200 ${status?.langsmith.enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+            className={`relative w-10 h-5 rounded-full transition-colors duration-200 ${status?.langsmith.enabled ? 'bg-orange-500' : 'bg-gray-300'}`}
             aria-label="切换 LangSmith"
           >
             <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${status?.langsmith.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
@@ -126,8 +126,8 @@ export const DevPanel: React.FC = () => {
       <div className="rounded-xl border border-[#E0E0E0] p-4">
         <span className="font-medium text-[#202124] block mb-2">⚙️ 系统</span>
         <div className="flex flex-wrap gap-2">
-          <span className="px-2 py-0.5 rounded-full bg-[#E8F0FE] text-[#1A73E8] text-xs">{status?.system.provider}</span>
-          <span className="px-2 py-0.5 rounded-full bg-[#E8F0FE] text-[#1A73E8] text-xs">{status?.system.model}</span>
+          <span className="px-2 py-0.5 rounded-full bg-[#F2DFD3] text-[#D97757] text-xs">{status?.system.provider}</span>
+          <span className="px-2 py-0.5 rounded-full bg-[#F2DFD3] text-[#D97757] text-xs">{status?.system.model}</span>
           <span className="px-2 py-0.5 rounded-full bg-gray-100 text-[#5F6368] text-xs">{status?.system.tracesCount} traces</span>
         </div>
       </div>
@@ -136,7 +136,7 @@ export const DevPanel: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="font-medium text-[#202124]">📊 调用记录</span>
-          <button onClick={fetchData} className="text-xs text-[#1A73E8] hover:underline">刷新</button>
+          <button onClick={fetchData} className="text-xs text-[#D97757] hover:underline">刷新</button>
         </div>
         {traces.length === 0 ? (
           <p className="text-xs text-[#9AA0A6] text-center py-6">暂无调用记录，发送消息后会自动记录</p>
