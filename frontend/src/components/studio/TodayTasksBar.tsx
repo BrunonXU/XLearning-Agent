@@ -14,6 +14,16 @@ export const TodayTasksBar: React.FC<TodayTasksBarProps> = ({ planId }) => {
 
   const handleCompleteDay = async () => {
     completeDay(currentDay.dayNumber)
+    const { activePlanId } = useStudioStore.getState()
+    const pid = planId || activePlanId
+    // Persist completed status to backend
+    if (pid) {
+      fetch(`/api/plans/${pid}/progress/${currentDay.dayNumber}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: true }),
+      }).catch(() => {})
+    }
     try {
       const { allDays: latestDays, activePlanId } = useStudioStore.getState()
       const res = await fetch('/api/studio/day-summary', {
@@ -54,7 +64,20 @@ export const TodayTasksBar: React.FC<TodayTasksBarProps> = ({ planId }) => {
             <input
               type="checkbox"
               checked={task.completed}
-              onChange={() => toggleTask(currentDay.dayNumber, i)}
+              onChange={() => {
+                toggleTask(currentDay.dayNumber, i)
+                // Persist to backend
+                const { allDays, activePlanId } = useStudioStore.getState()
+                const pid = planId || activePlanId
+                const day = allDays.find(d => d.dayNumber === currentDay.dayNumber)
+                if (pid && day) {
+                  fetch(`/api/plans/${pid}/progress/${currentDay.dayNumber}/tasks`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tasks: day.tasks }),
+                  }).catch(() => {})
+                }
+              }}
               className="rounded"
             />
             <span className={`text-sm ${task.completed ? 'line-through text-gray-400' : 'text-gray-700'}`}>

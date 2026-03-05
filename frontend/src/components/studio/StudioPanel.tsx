@@ -170,6 +170,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
     useStudioStore.setState((s) => ({
       generatedContents: s.generatedContents.filter(c => c.id !== id)
     }))
+    fetch(`/api/generated-contents/${id}`, { method: 'DELETE' }).catch(() => {})
     setMenuId(null)
   }
 

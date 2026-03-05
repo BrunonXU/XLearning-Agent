@@ -538,6 +538,17 @@ def get_generated_contents(plan_id: str) -> List[dict]:
     return [_to_camel(dict(r)) for r in rows]
 
 
+def delete_generated_content(content_id: str) -> bool:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute("DELETE FROM generated_contents WHERE id = ?", (content_id,))
+        return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Search History CRUD
 # ---------------------------------------------------------------------------

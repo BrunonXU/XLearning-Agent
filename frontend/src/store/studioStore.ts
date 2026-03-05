@@ -141,9 +141,35 @@ export const useStudioStore = create<StudioStore>()((set) => ({
     // 新类型：直接添加
     return { generatedContents: [{ ...c, version: 1, versions: [] }, ...s.generatedContents] }
   }),
-  addNote: (n) => set((s) => ({ notes: [n, ...s.notes] })),
-  updateNote: (id, patch) => set((s) => ({ notes: s.notes.map((n) => n.id === id ? { ...n, ...patch } : n) })),
-  deleteNote: (id) => set((s) => ({ notes: s.notes.filter((n) => n.id !== id) })),
+  addNote: (n) => {
+    set((s) => ({ notes: [n, ...s.notes] }))
+    // Persist to backend
+    const { activePlanId } = useStudioStore.getState()
+    if (activePlanId) {
+      fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: activePlanId, title: n.title, content: n.content }),
+      }).then(res => res.ok ? res.json() : null).then(data => {
+        if (data && data.id) {
+          // Replace temp ID with backend ID
+          set((s) => ({ notes: s.notes.map(note => note.id === n.id ? { ...note, id: data.id } : note) }))
+        }
+      }).catch(() => {})
+    }
+  },
+  updateNote: (id, patch) => {
+    set((s) => ({ notes: s.notes.map((n) => n.id === id ? { ...n, ...patch } : n) }))
+    fetch(`/api/notes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: patch.title, content: patch.content }),
+    }).catch(() => {})
+  },
+  deleteNote: (id) => {
+    set((s) => ({ notes: s.notes.filter((n) => n.id !== id) }))
+    fetch(`/api/notes/${id}`, { method: 'DELETE' }).catch(() => {})
+  },
   setDevMode: (v) => set({ devMode: v }),
   setLearnerProfile: (p) => set({ learnerProfile: p }),
   saveLearnerProfile: async (planId, p) => {

@@ -168,6 +168,13 @@ async def save_generated_content(plan_id: str, body: dict):
     return database.insert_generated_content(body)
 
 
+@router.delete("/generated-contents/{content_id}", status_code=204)
+async def delete_generated_content(content_id: str):
+    deleted = database.delete_generated_content(content_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Generated content not found")
+
+
 # ---------------------------------------------------------------------------
 # Search History sub-resource
 # ---------------------------------------------------------------------------
