@@ -57,6 +57,11 @@ class SearchResult(BaseModel):
     content_summary: str = ""  # AI 内容摘要
     comment_summary: str = ""  # 评论结论摘要
     image_urls: List[str] = Field(default_factory=list)  # 图片 URL 列表
+    # 结构化知识提取
+    key_points: List[str] = Field(default_factory=list)       # 核心观点
+    key_facts: List[str] = Field(default_factory=list)        # 关键数据/事实
+    methodology: List[str] = Field(default_factory=list)      # 方法论/步骤
+    credibility: Dict[str, Any] = Field(default_factory=dict) # 可信度子维度
 
     def to_dict(self) -> dict:
         """序列化为字典"""

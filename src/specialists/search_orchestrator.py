@@ -92,8 +92,6 @@ class SearchOrchestrator:
         # 关键词翻译
         self._llm = llm_provider
         self._translation_cache: Dict[str, str] = {}
-        # 浏览器启动锁，防止并发平台重复 launch
-        self._browser_launch_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -258,7 +256,7 @@ class SearchOrchestrator:
             per_platform_limit: 每平台搜索条数，None 则使用默认值 10
             cancel_event: 取消信号，设置后中断所有进行中的任务
         """
-        PLATFORM_TIMEOUT = 90.0  # 单平台超时（秒），小红书需要串行获取详情+评论
+        PLATFORM_TIMEOUT = 360.0  # 单平台超时（秒），首次登录小红书可能需要 5 分钟
 
         _cancel = cancel_event or asyncio.Event()
 
@@ -328,8 +326,9 @@ class SearchOrchestrator:
             if not PLATFORM_CONFIGS[p].requires_login and not PLATFORM_CONFIGS[p].use_api_search
         ]
 
-        # 第一批：API 平台 + 需要登录的平台（串行，可能触发浏览器重启）
-        batch1_tasks = [_search_with_timeout(p) for p in api_platforms]
+        # 第一批：API 平台（并发 task）+ 需要登录的平台（串行，可能触发浏览器重启）
+        # 用 create_task 确保 API 平台在登录平台串行执行期间也在并发运行
+        batch1_tasks = [asyncio.create_task(_search_with_timeout(p)) for p in api_platforms]
         for p in login_platforms:
             if _cancel.is_set():
                 await self.close()
@@ -339,6 +338,10 @@ class SearchOrchestrator:
                 if result:
                     all_raw.extend(result)
                     logger.info(f"{p}: {len(result)} 条结果")
+            except asyncio.TimeoutError:
+                err_msg = f"平台 {p} 搜索超时（{PLATFORM_TIMEOUT}s）"
+                logger.warning(err_msg)
+                errors.append(err_msg)
             except Exception as e:
                 err_msg = f"平台 {p} 搜索失败: {e}"
                 logger.warning(err_msg)
@@ -536,6 +539,10 @@ class SearchOrchestrator:
             content_summary=scored.content_summary,
             comment_summary=scored.comment_summary,
             image_urls=list(raw.image_urls) if raw.image_urls else [],
+            key_points=list(scored.key_points) if scored.key_points else [],
+            key_facts=list(scored.key_facts) if scored.key_facts else [],
+            methodology=list(scored.methodology) if scored.methodology else [],
+            credibility=dict(scored.credibility) if scored.credibility else {},
         )
 
     async def _translate_keyword(self, query: str) -> Optional[str]:
@@ -619,7 +626,7 @@ class SearchOrchestrator:
                 return results
             
             # 其他平台：浏览器搜索
-            async with self._browser_launch_lock:
+            async with self._browser_agent._get_launch_lock():
                 if self._browser_agent._browser is None:
                     await self._browser_agent.launch(config, allow_interactive_login=False)
                     if self._browser_agent._browser is None:

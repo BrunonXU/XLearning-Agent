@@ -24,6 +24,20 @@ export interface SearchResult {
   engagementMetrics?: Record<string, any>;  // 互动指标
   imageUrls?: string[];                 // 图片 URL 列表
   topComments?: string[];               // 高赞评论文本列表
+  // 结构化知识提取
+  keyPoints?: string[];                 // 核心观点（3-5 条）
+  keyFacts?: string[];                  // 关键数据/事实
+  methodology?: string[];               // 方法论/步骤
+  credibility?: {                       // 可信度子维度评估
+    timeliness?: number;                // 时效性 0-10
+    authority?: number;                 // 权威性 0-10
+    accuracy?: number;                  // 准确性 0-10
+    objectivity?: number;               // 客观性 0-10
+    timeliness_note?: string;
+    authority_note?: string;
+    accuracy_note?: string;
+    objectivity_note?: string;
+  };
 }
 
 export interface ChatMessage {

@@ -45,4 +45,12 @@ class ScoredResult(BaseModel):
     content_summary: str = ""         # AI 内容摘要（≤150 字）
     comment_summary: str = ""         # 评论结论摘要（≤100 字）
     extracted_content: str = ""       # 提取的正文内容（用于缓存）
+    # 结构化知识提取
+    key_points: List[str] = Field(default_factory=list)       # 核心观点（3-5 条）
+    key_facts: List[str] = Field(default_factory=list)        # 关键数据/事实
+    methodology: List[str] = Field(default_factory=list)      # 方法论/步骤
+    # 可信度子维度评估（各 0-10）
+    credibility: Dict[str, Any] = Field(default_factory=dict)
+    # 格式: { timeliness: 8, authority: 7, accuracy: 9, objectivity: 6,
+    #          timeliness_note: "...", authority_note: "...", accuracy_note: "...", objectivity_note: "..." }
 

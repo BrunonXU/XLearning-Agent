@@ -2,7 +2,7 @@
 # 用法：在项目根目录运行 .\start_dev.ps1
 
 Write-Host "启动 FastAPI 后端 (port 8000)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload" -WorkingDirectory $PSScriptRoot
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $PSScriptRoot
 
 Start-Sleep -Seconds 2
 

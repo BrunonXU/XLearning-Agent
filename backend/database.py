@@ -137,10 +137,17 @@ def init_db() -> None:
                 platforms   TEXT DEFAULT '[]',
                 results     TEXT DEFAULT '[]',
                 result_count INTEGER DEFAULT 0,
-                searched_at TEXT NOT NULL
+                searched_at TEXT NOT NULL,
+                status      TEXT DEFAULT 'done'
             );
             CREATE INDEX IF NOT EXISTS idx_search_history_plan_id ON search_history(plan_id);
         """)
+        # Migration: add status column to search_history if missing
+        try:
+            conn.execute("ALTER TABLE search_history ADD COLUMN status TEXT DEFAULT 'done'")
+            logger.info("Added status column to search_history")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         logger.info("Database initialized successfully at %s", _DB_PATH)
     except sqlite3.Error as e:
         logger.error("Database initialization failed: %s", e)
@@ -313,6 +320,20 @@ def update_material_status(material_id: str, status: str) -> bool:
     except sqlite3.Error as e:
         logger.error("Database error: %s", e)
         raise RuntimeError(f"Database error: {e}")
+
+
+def get_material_extra_data(material_id: str) -> Optional[dict]:
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT extra_data FROM materials WHERE id = ?", (material_id,)
+        ).fetchone()
+        if row and row["extra_data"]:
+            return json.loads(row["extra_data"])
+        return None
+    except (sqlite3.Error, json.JSONDecodeError) as e:
+        logger.error("Database error: %s", e)
+        return None
 
 
 def update_material_extra_data(material_id: str, extra_data: dict) -> bool:
@@ -603,11 +624,13 @@ def insert_search_history(entry: dict) -> dict:
         data["platforms"] = json.dumps(data["platforms"], ensure_ascii=False)
     if "results" in data and not isinstance(data["results"], str):
         data["results"] = json.dumps(data["results"], ensure_ascii=False)
+    if "status" not in data:
+        data["status"] = "done"
     try:
         with conn:
             conn.execute(
-                """INSERT INTO search_history (id, plan_id, query, platforms, results, result_count, searched_at)
-                   VALUES (:id, :plan_id, :query, :platforms, :results, :result_count, :searched_at)""",
+                """INSERT INTO search_history (id, plan_id, query, platforms, results, result_count, searched_at, status)
+                   VALUES (:id, :plan_id, :query, :platforms, :results, :result_count, :searched_at, :status)""",
                 data,
             )
         result = dict(data)
@@ -637,6 +660,59 @@ def get_search_history(plan_id: str, limit: int = 20) -> List[dict]:
     return results
 
 
+def update_search_history(entry_id: str, patch: dict) -> Optional[dict]:
+    """Update an existing search history entry (e.g. after search completes)."""
+    conn = get_connection()
+    data = _to_snake(patch)
+    if "results" in data and not isinstance(data["results"], str):
+        data["results"] = json.dumps(data["results"], ensure_ascii=False)
+    if "platforms" in data and not isinstance(data["platforms"], str):
+        data["platforms"] = json.dumps(data["platforms"], ensure_ascii=False)
+
+    allowed = {"results", "result_count", "status"}
+    sets = []
+    params: dict = {}
+    for k, v in data.items():
+        if k in allowed:
+            sets.append(f"{k} = :{k}")
+            params[k] = v
+    if not sets:
+        return None
+    params["id"] = entry_id
+    try:
+        with conn:
+            cur = conn.execute(
+                f"UPDATE search_history SET {', '.join(sets)} WHERE id = :id",
+                params,
+            )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM search_history WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["platforms"] = json.loads(d.get("platforms") or "[]")
+        d["results"] = json.loads(d.get("results") or "[]")
+        return _to_camel(d)
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
+def delete_single_search_history(entry_id: str) -> bool:
+    """删除单条搜索历史。"""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM search_history WHERE id = ?", (entry_id,)
+            )
+        return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
 def delete_search_history(plan_id: str) -> bool:
     conn = get_connection()
     try:
@@ -648,3 +724,5 @@ def delete_search_history(plan_id: str) -> bool:
     except sqlite3.Error as e:
         logger.error("Database error: %s", e)
         raise RuntimeError(f"Database error: {e}")
+
+

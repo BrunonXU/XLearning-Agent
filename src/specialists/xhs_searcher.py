@@ -293,8 +293,49 @@ class XhsSearcher:
         await self._page.wait_for_timeout(3000)
 
         await self._refresh_cookies()
-        if not self._cookie_dict.get("web_session"):
+        need_login = not self._cookie_dict.get("web_session")
+
+        # web_session 存在但可能被封禁，用 selfinfo 接口验证（参照 MediaCrawler pong）
+        if not need_login:
+            try:
+                self._build_base_headers()
+                self_info = await self._signed_request("GET", "/api/sns/web/v1/user/selfinfo", params={})
+                if self_info and self_info.get("result", {}).get("success"):
+                    logger.info("小红书 cookie 验证通过")
+                else:
+                    logger.warning("小红书 cookie 验证失败（selfinfo 无效），需要重新登录")
+                    need_login = True
+            except Exception as e:
+                logger.warning(f"小红书 cookie 验证失败: {e}，需要重新登录")
+                need_login = True
+
+        if need_login:
+            # 关闭当前 headless 浏览器，清数据，弹可见浏览器登录
+            try:
+                if self._browser_context:
+                    await self._browser_context.close()
+                    self._browser_context = None
+                    self._page = None
+                if self._pw_cm:
+                    await self._pw_cm.__aexit__(None, None, None)
+                    self._playwright = None
+                    self._pw_cm = None
+            except Exception:
+                pass
+
+            import shutil
+            xhs_data = _PROJECT_ROOT / "browser_data" / "xhs"
+            if xhs_data.exists():
+                shutil.rmtree(xhs_data, ignore_errors=True)
+            if COOKIE_FILE.exists():
+                COOKIE_FILE.unlink(missing_ok=True)
+
             await self._interactive_login()
+            return  # _interactive_login 末尾会递归调用 _init_browser 完成初始化
+
+        self._build_base_headers()
+        self._initialized = True
+        logger.info("小红书签名环境就绪")
 
         self._build_base_headers()
         self._initialized = True
@@ -304,9 +345,21 @@ class XhsSearcher:
         """弹出可见浏览器让用户手动登录。"""
         logger.info("=" * 50)
         logger.info("需要登录小红书，即将弹出浏览器窗口")
-        logger.info("请手动登录，登录成功后自动检测（最多等 3 分钟）")
+        logger.info("请手动登录，登录成功后自动检测（最多等 5 分钟）")
         logger.info("=" * 50)
-        await self.close()
+
+        # 确保之前的浏览器已关闭
+        try:
+            if self._browser_context:
+                await self._browser_context.close()
+                self._browser_context = None
+                self._page = None
+            if self._pw_cm:
+                await self._pw_cm.__aexit__(None, None, None)
+                self._playwright = None
+                self._pw_cm = None
+        except Exception:
+            pass
 
         self._pw_cm = async_playwright()
         self._playwright = await self._pw_cm.start()
@@ -321,17 +374,45 @@ class XhsSearcher:
         self._page = await self._browser_context.new_page()
         await self._page.goto(XHS_INDEX, wait_until="domcontentloaded", timeout=30000)
 
-        for _ in range(36):
+        logged_in = False
+        for i in range(60):  # 60 * 5s = 5 分钟
             await self._page.wait_for_timeout(5000)
             await self._refresh_cookies()
-            if self._cookie_dict.get("web_session"):
-                logger.info("登录成功！")
-                self._save_cookies(await self._browser_context.cookies())
-                break
-        else:
-            raise RuntimeError("登录超时")
+            if not self._cookie_dict.get("web_session"):
+                if i % 6 == 0:
+                    logger.info(f"等待登录中... ({(i+1)*5}s / 300s)")
+                continue
+            # web_session 存在，用 selfinfo 验证是否真的登录了
+            try:
+                self._build_base_headers()
+                self_info = await self._signed_request("GET", "/api/sns/web/v1/user/selfinfo", params={})
+                if self_info and self_info.get("result", {}).get("success"):
+                    logger.info("登录验证通过！")
+                    self._save_cookies(await self._browser_context.cookies())
+                    logged_in = True
+                    break
+                else:
+                    if i % 6 == 0:
+                        logger.info(f"web_session 存在但未真正登录，继续等待... ({(i+1)*5}s / 300s)")
+            except Exception:
+                if i % 6 == 0:
+                    logger.info(f"等待登录中... ({(i+1)*5}s / 300s)")
 
-        await self.close()
+        if not logged_in:
+            raise RuntimeError("登录超时（5分钟）")
+
+        # 登录成功，关闭可见浏览器，重新用 headless 启动
+        try:
+            await self._browser_context.close()
+            self._browser_context = None
+            self._page = None
+            await self._pw_cm.__aexit__(None, None, None)
+            self._playwright = None
+            self._pw_cm = None
+        except Exception:
+            pass
+
+        # 重新初始化 headless 浏览器（这次 cookie 有效，不会再弹登录）
         await self._init_browser()
 
     # ---- Cookie 管理 ----

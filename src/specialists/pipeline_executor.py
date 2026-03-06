@@ -173,10 +173,24 @@ class PipelineExecutor:
         执行实际的内容提取。
 
         使用 BrowserAgent 打开新 tab，通过 ResourceCollector 提取正文、评论和图片。
+        对于已有完整数据的结果（如小红书 API 返回），直接使用已有数据，跳过浏览器提取。
         """
         content = ""
         comments: List[Dict] = []
         image_urls: List[str] = list(result.image_urls or [])
+
+        # 如果结果已经有完整内容（XhsSearcher 等 API 搜索器已提取），直接使用
+        has_rich_data = (
+            result.content_snippet
+            and len(result.content_snippet) > 50
+            and (result.top_comments or result.engagement_metrics)
+        )
+        if has_rich_data:
+            return {
+                "content": result.content_snippet or "",
+                "comments": result.top_comments or [],
+                "image_urls": image_urls,
+            }
 
         # Get platform config for this result
         config = PLATFORM_CONFIGS.get(result.platform)

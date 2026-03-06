@@ -68,10 +68,12 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
       setViewingMaterial(mat)
       onReadingChange?.(true)
     } else {
+      onReadingChange?.(true)
       const detail = useSearchStore.getState().getResultDetail(id)
       if (detail) {
         setPreviewResult(detail)
       } else {
+        // Fallback: construct a minimal SearchResult with safe defaults
         setPreviewResult({
           id: mat.id,
           title: mat.name,
@@ -80,6 +82,11 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
           description: '',
           qualityScore: 0,
           recommendationReason: '',
+          contentSummary: '',
+          commentSummary: '',
+          engagementMetrics: {},
+          imageUrls: [],
+          topComments: [],
         })
       }
     }
@@ -125,6 +132,37 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
         }),
       }).catch(() => { /* 静默失败 */ })
     }
+
+    // 异步触发深度分析（不阻塞 UI）
+    results.forEach(r => {
+      fetch('/api/resource/deep-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          materialId: r.id,
+          title: r.title,
+          url: r.url,
+          platform: r.platform,
+          description: r.description,
+          contentSummary: r.contentSummary ?? '',
+          commentSummary: r.commentSummary ?? '',
+          topComments: r.topComments ?? [],
+          engagementMetrics: r.engagementMetrics ?? {},
+        }),
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) {
+            useSearchStore.getState().updateResultDetail(r.id, {
+              keyPoints: data.keyPoints,
+              keyFacts: data.keyFacts,
+              methodology: data.methodology,
+              credibility: data.credibility,
+            })
+          }
+        })
+        .catch(() => { /* 静默失败 */ })
+    })
   }
 
   return (
@@ -132,7 +170,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
       {previewResult && (
         <PreviewPopup
           result={previewResult}
-          onClose={() => { setPreviewResult(null); setSelectedId(null) }}
+          onClose={() => { setPreviewResult(null); setSelectedId(null); onReadingChange?.(false) }}
           onRefresh={() => {
             if (previewResult) {
               useSearchStore.getState().saveResultDetails([previewResult])
@@ -225,7 +263,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
             />
           </div>
         ) : (
-          <SearchPanel planId={planId} onAddToMaterials={handleAddFromSearch} />
+          <SearchPanel planId={planId} onAddToMaterials={handleAddFromSearch} onViewDetail={(r) => { setPreviewResult(r); onReadingChange?.(true) }} />
         )}
       </div>
 

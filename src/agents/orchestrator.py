@@ -812,25 +812,12 @@ class Orchestrator:
             return self._handle_ask_question(user_input, history=history)
 
     def _store_search_results(self, results, query: str):
-        """将搜索结果存入 session state 供 Resources 面板展示。"""
-        try:
-            import streamlit as st
-            if st.session_state.get("current_session") is not None:
-                existing = st.session_state.current_session.get("_search_results", [])
-                new_items = []
-                for r in results:
-                    item = r.model_dump() if hasattr(r, "model_dump") else r.__dict__.copy()
-                    item["_query"] = query
-                    new_items.append(item)
-                seen_urls = {r.get("url") for r in existing if isinstance(r, dict)}
-                for item in new_items:
-                    if item.get("url") not in seen_urls:
-                        existing.append(item)
-                        seen_urls.add(item.get("url"))
-                st.session_state.current_session["_search_results"] = existing
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).debug(f"Failed to store search results: {e}")
+        """将搜索结果存入日志（Streamlit 已移除，此方法仅做记录）。"""
+        import logging
+        log = logging.getLogger(__name__)
+        count = len(results) if results else 0
+        log.debug(f"[Orchestrator] Search returned {count} results for query={query!r}")
+
 
     
     def _handle_get_report(self) -> str:

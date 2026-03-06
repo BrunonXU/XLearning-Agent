@@ -79,6 +79,14 @@ class BrowserAgent:
         self._last_platform_request: Dict[str, float] = {}
         # 评论锁（懒加载，避免在无事件循环的线程中初始化失败）
         self._comment_lock: Optional[asyncio.Lock] = None
+        # 浏览器启动锁，防止并发 launch
+        self._launch_lock: Optional[asyncio.Lock] = None
+
+    def _get_launch_lock(self) -> asyncio.Lock:
+        """懒加载启动锁，确保在有事件循环的上下文中创建。"""
+        if self._launch_lock is None:
+            self._launch_lock = asyncio.Lock()
+        return self._launch_lock
 
     def _get_comment_lock(self) -> asyncio.Lock:
         """懒加载评论锁，确保在有事件循环的上下文中创建。"""
@@ -429,7 +437,9 @@ class BrowserAgent:
             # 尝试自动启动浏览器（可能是 close 后重新搜索的场景）
             logger.warning("浏览器未启动，尝试自动启动...")
             try:
-                await self.launch(config, allow_interactive_login=False)
+                async with self._get_launch_lock():
+                    if not self._context:  # double-check after acquiring lock
+                        await self.launch(config, allow_interactive_login=False)
             except Exception as e:
                 logger.error(f"自动启动浏览器失败: {e}")
             if not self._context:

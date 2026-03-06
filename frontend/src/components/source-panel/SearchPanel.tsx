@@ -50,6 +50,7 @@ function stageToMessage(stage: SearchStage, evt?: any): string {
 interface SearchPanelProps {
   planId?: string
   onAddToMaterials: (results: SearchResult[]) => void
+  onViewDetail?: (result: SearchResult) => void
 }
 
 /** 解析 SSE done 事件中的结果列表 */
@@ -68,11 +69,15 @@ function parseResults(evt: any): SearchResult[] {
       engagementMetrics: item.engagementMetrics,
       imageUrls: item.imageUrls,
       topComments: item.topComments,
+      keyPoints: item.keyPoints,
+      keyFacts: item.keyFacts,
+      methodology: item.methodology,
+      credibility: item.credibility,
     }))
     .sort((a: SearchResult, b: SearchResult) => b.qualityScore - a.qualityScore)
 }
 
-export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMaterials }) => {
+export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMaterials, onViewDetail }) => {
   const [query, setQuery] = useState('')
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<PlatformType>>(new Set())
   const [checked, setChecked] = useState<Set<string>>(new Set())
@@ -203,7 +208,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
                 results: items,
                 resultCount: items.length,
                 status: 'done',
-              })
+              }, planId)
             } else if (stage === 'error') {
               if (timeoutRef.current) clearTimeout(timeoutRef.current)
               update({
@@ -214,7 +219,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
               // 更新占位历史条目为失败状态
               useSearchStore.getState().updateEntry(placeholderId, {
                 status: 'error',
-              })
+              }, planId)
             }
           } catch { /* 忽略解析错误 */ }
         }
@@ -267,14 +272,38 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
           className="flex-1 h-10 rounded-lg border border-[#DADCE0] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#D97757]/30 focus:border-[#D97757] dark:bg-dark-surface dark:border-dark-border dark:text-dark-text"
           aria-label="搜索关键词"
         />
-        <button
-          onClick={handleSearch}
-          disabled={!query.trim()}
-          aria-label="搜索资源"
-          className="h-10 px-4 bg-[#D97757] text-white rounded-lg text-sm hover:bg-[#C06144] disabled:opacity-40 transition-colors duration-150"
-        >
-          {isSearching ? '…' : '🔍'}
-        </button>
+        {isSearching ? (
+          <button
+            onClick={() => {
+              const store = useSearchStore.getState()
+              store.activeSearch?.abortController?.abort()
+              if (timeoutRef.current) clearTimeout(timeoutRef.current)
+              store.updateActiveSearch({
+                stage: 'error',
+                error: '搜索已取消',
+                abortController: null,
+              })
+              // 更新对应的历史条目状态
+              const entry = store.history.find(e => e.status === 'searching')
+              if (entry) {
+                store.updateEntry(entry.id, { status: 'error' }, planId)
+              }
+            }}
+            aria-label="取消搜索"
+            className="h-10 px-4 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600 transition-colors duration-150"
+          >
+            ✕ 取消
+          </button>
+        ) : (
+          <button
+            onClick={handleSearch}
+            disabled={!query.trim()}
+            aria-label="搜索资源"
+            className="h-10 px-4 bg-[#D97757] text-white rounded-lg text-sm hover:bg-[#C06144] disabled:opacity-40 transition-colors duration-150"
+          >
+            🔍
+          </button>
+        )}
       </div>
 
       {/* 平台选择 */}
@@ -296,7 +325,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
         ))}
       </div>
 
-      {/* 搜索阶段进度 */}
+      {/* 搜索阶段进度 + 取消按钮 */}
       {isActive && stageMessage && (
         <div className="flex items-center gap-2 text-xs text-[#5F6368] py-1">
           <span className="flex gap-0.5">
@@ -304,7 +333,27 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
             <span className="w-1.5 h-1.5 rounded-full bg-[#D97757] animate-bounce [animation-delay:100ms]" />
             <span className="w-1.5 h-1.5 rounded-full bg-[#D97757] animate-bounce [animation-delay:200ms]" />
           </span>
-          <span>{stageMessage}</span>
+          <span className="flex-1">{stageMessage}</span>
+          <button
+            onClick={() => {
+              const store = useSearchStore.getState()
+              store.activeSearch?.abortController?.abort()
+              if (timeoutRef.current) clearTimeout(timeoutRef.current)
+              store.updateActiveSearch({
+                stage: 'error',
+                error: '搜索已取消',
+                abortController: null,
+              })
+              const entry = store.history.find(e => e.status === 'searching')
+              if (entry) {
+                store.updateEntry(entry.id, { status: 'error' }, planId)
+              }
+            }}
+            aria-label="取消搜索"
+            className="text-xs text-red-500 hover:text-red-600 font-medium transition-colors"
+          >
+            取消
+          </button>
         </div>
       )}
 
@@ -323,6 +372,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
                 result={r}
                 checked={checked.has(r.id)}
                 onToggle={() => toggleCheck(r.id)}
+                onViewDetail={onViewDetail}
               />
             ))}
           </div>
@@ -355,6 +405,8 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
                 setExpandedHistoryId(prev => prev === entry.id ? null : entry.id)
               }
               onAddToMaterials={onAddToMaterials}
+              onRemove={(id) => useSearchStore.getState().removeEntry(id, planId)}
+              onViewDetail={onViewDetail}
             />
           ))}
         </div>

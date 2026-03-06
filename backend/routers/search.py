@@ -40,6 +40,10 @@ class SearchResultItem(BaseModel):
     engagementMetrics: Dict[str, Any] = {}
     imageUrls: List[str] = []
     topComments: List[str] = []
+    keyPoints: List[str] = []
+    keyFacts: List[str] = []
+    methodology: List[str] = []
+    credibility: Dict[str, Any] = {}
 
 
 class SearchProgressEvent(BaseModel):
@@ -66,7 +70,6 @@ async def search_resources(body: SearchRequest):
         from src.specialists.resource_searcher import ResourceSearcher
         searcher = ResourceSearcher()
 
-        # ResourceSearcher.search 是同步的，在线程池中运行避免阻塞事件循环
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(
             None,
@@ -77,7 +80,6 @@ async def search_resources(body: SearchRequest):
             )
         )
 
-        # 转换为前端格式，按 quality_score 降序
         items = [
             SearchResultItem(
                 id=str(uuid.uuid4()),
@@ -102,84 +104,82 @@ async def search_resources(body: SearchRequest):
 async def search_stream(body: SearchRequest, request: Request):
     """
     SSE 流式搜索端点，通过 SearchOrchestrator 五阶段漏斗推送进度。
-
-    事件格式（stage 字段）：
-      data: {"stage": "searching", "message": "正在搜索小红书...", "platform": "xiaohongshu"}
-      data: {"stage": "filtering", "message": "已获取 30 条，正在初筛...", "total": 30}
-      data: {"stage": "extracting", "message": "正在提取详情（3/15）...", "completed": 3, "total": 15}
-      data: {"stage": "evaluating", "message": "AI 正在评估内容质量..."}
-      data: {"stage": "done", "results": [...]}
-      data: {"stage": "error", "message": "..."}
     """
     cancel_event = asyncio.Event()
 
     async def _generate():
-        if not body.query.strip():
-            evt = SearchProgressEvent(stage="done", results=[])
-            yield f"data: {evt.model_dump_json()}\n\n"
-            return
-
-        platforms = [p for p in (body.platforms or list(VALID_PLATFORMS)) if p in VALID_PLATFORMS]
-        if not platforms:
-            evt = SearchProgressEvent(stage="error", message="无有效搜索平台")
-            yield f"data: {evt.model_dump_json()}\n\n"
-            return
-
-        from src.specialists.search_orchestrator import SearchOrchestrator
-        from src.providers.factory import ProviderFactory
+        orchestrator = None
         try:
-            llm = ProviderFactory.create_llm()
-        except Exception as e:
-            logger.warning(f"LLM provider 创建失败，关键词翻译将不可用: {e}")
-            llm = None
-        orchestrator = SearchOrchestrator(llm_provider=llm)
+            if not body.query.strip():
+                evt = SearchProgressEvent(stage="done", results=[])
+                yield f"data: {evt.model_dump_json()}\n\n"
+                return
 
-        try:
-            async for event in orchestrator.search_all_platforms_stream(
-                query=body.query,
-                platforms=platforms,
-                cancel_event=cancel_event,
-            ):
-                # Check if client disconnected (AbortController)
-                if await request.is_disconnected():
-                    cancel_event.set()
-                    break
+            platforms = [p for p in (body.platforms or list(VALID_PLATFORMS)) if p in VALID_PLATFORMS]
+            if not platforms:
+                evt = SearchProgressEvent(stage="error", message="无有效搜索平台")
+                yield f"data: {evt.model_dump_json()}\n\n"
+                return
 
-                if cancel_event.is_set():
-                    break
-
-                stage = event.get("stage", "")
-
-                if stage == "done":
-                    # Convert raw result dicts to SearchResultItem for the SSE response
-                    raw_results = event.get("results", [])
-                    items = [
-                        _to_search_result_item(r) for r in raw_results
-                    ]
-                    progress = SearchProgressEvent(stage="done", results=items)
-                    yield f"data: {progress.model_dump_json()}\n\n"
-                else:
-                    # Forward searching/filtering/extracting/evaluating/error events as-is
-                    progress = SearchProgressEvent(
-                        stage=stage,
-                        message=event.get("message", ""),
-                        platform=event.get("platform"),
-                        total=event.get("total"),
-                        completed=event.get("completed"),
-                        error=event.get("message") if stage == "error" else None,
-                    )
-                    yield f"data: {progress.model_dump_json()}\n\n"
-        except Exception as e:
-            logger.error(f"[search/stream] error: {e}")
-            err_evt = SearchProgressEvent(stage="error", message=str(e))
-            yield f"data: {err_evt.model_dump_json()}\n\n"
-        finally:
-            # Ensure browser resources are released
-            cancel_event.set()
+            from src.specialists.search_orchestrator import SearchOrchestrator
+            from src.providers.factory import ProviderFactory
             try:
-                await orchestrator.close()
-            except Exception:
-                pass
+                llm = ProviderFactory.create_llm()
+            except Exception as e:
+                logger.warning(f"LLM provider 创建失败，关键词翻译将不可用: {e}")
+                llm = None
+            orchestrator = SearchOrchestrator(llm_provider=llm)
+
+            try:
+                async for event in orchestrator.search_all_platforms_stream(
+                    query=body.query,
+                    platforms=platforms,
+                    cancel_event=cancel_event,
+                ):
+                    if await request.is_disconnected():
+                        cancel_event.set()
+                        break
+
+                    if cancel_event.is_set():
+                        break
+
+                    stage = event.get("stage", "")
+
+                    if stage == "done":
+                        raw_results = event.get("results", [])
+                        items = [
+                            _to_search_result_item(r) for r in raw_results
+                        ]
+                        progress = SearchProgressEvent(stage="done", results=items)
+                        yield f"data: {progress.model_dump_json()}\n\n"
+                    else:
+                        progress = SearchProgressEvent(
+                            stage=stage,
+                            message=event.get("message", ""),
+                            platform=event.get("platform"),
+                            total=event.get("total"),
+                            completed=event.get("completed"),
+                            error=event.get("message") if stage == "error" else None,
+                        )
+                        yield f"data: {progress.model_dump_json()}\n\n"
+            except Exception as e:
+                logger.error(f"[search/stream] error: {e}")
+                try:
+                    err_evt = SearchProgressEvent(stage="error", message=str(e))
+                    yield f"data: {err_evt.model_dump_json()}\n\n"
+                except Exception:
+                    pass
+        except (asyncio.CancelledError, ConnectionError, Exception) as e:
+            # 客户端断开连接（abort）时，yield 会抛出异常，静默处理
+            logger.info(f"[search/stream] client disconnected: {type(e).__name__}")
+        finally:
+            cancel_event.set()
+            if orchestrator:
+                try:
+                    await orchestrator.close()
+                except Exception as e:
+                    # Windows 上关闭 Playwright 子进程可能触发 pipe 错误，静默处理
+                    logger.debug(f"[search/stream] orchestrator close error (safe to ignore): {e}")
 
     return StreamingResponse(
         _generate(),
@@ -203,4 +203,8 @@ def _to_search_result_item(result_dict: dict) -> SearchResultItem:
         engagementMetrics=result_dict.get("engagement_metrics", {}),
         imageUrls=result_dict.get("image_urls", []),
         topComments=result_dict.get("comments_preview", []),
+        keyPoints=result_dict.get("key_points", []),
+        keyFacts=result_dict.get("key_facts", []),
+        methodology=result_dict.get("methodology", []),
+        credibility=result_dict.get("credibility", {}),
     )

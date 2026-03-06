@@ -190,6 +190,21 @@ async def save_search_history(plan_id: str, body: dict):
     return database.insert_search_history(body)
 
 
+@router.put("/plans/{plan_id}/search-history/{entry_id}")
+async def update_search_history(plan_id: str, entry_id: str, body: dict):
+    result = database.update_search_history(entry_id, body)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Search history entry not found")
+    return result
+
+
+@router.delete("/plans/{plan_id}/search-history/{entry_id}", status_code=204)
+async def delete_single_search_history(plan_id: str, entry_id: str):
+    deleted = database.delete_single_search_history(entry_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Search history entry not found")
+
+
 @router.delete("/plans/{plan_id}/search-history", status_code=204)
 async def clear_search_history(plan_id: str):
     database.delete_search_history(plan_id)

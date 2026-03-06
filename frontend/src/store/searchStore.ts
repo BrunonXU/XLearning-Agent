@@ -23,8 +23,10 @@ interface SearchStore {
   addEntry: (planId: string, entry: SearchHistoryEntry) => void
   clearHistory: (planId: string) => Promise<void>
   saveResultDetails: (results: SearchResult[]) => void
+  updateResultDetail: (id: string, patch: Partial<SearchResult>) => void
   getResultDetail: (materialId: string) => SearchResult | undefined
-  updateEntry: (id: string, patch: Partial<SearchHistoryEntry>) => void
+  updateEntry: (id: string, patch: Partial<SearchHistoryEntry>, planId?: string) => void
+  removeEntry: (id: string, planId: string) => void
   setActiveSearch: (search: ActiveSearch | null) => void
   updateActiveSearch: (patch: Partial<ActiveSearch>) => void
 }
@@ -40,12 +42,16 @@ export const useSearchStore = create<SearchStore>()((set, get) => ({
     try {
       const res = await fetch(`/api/plans/${planId}/search-history`)
       if (!res.ok) throw new Error('加载失败')
-      const data = await res.json()
+      const data = (await res.json()) as SearchHistoryEntry[]
+      // 把僵尸 "searching" 记录标记为 error（上次搜索中途页面关了）
+      const cleaned = data.map(e =>
+        e.status === 'searching' ? { ...e, status: 'error' as const } : e
+      )
       const map: Record<string, SearchResult> = {}
-      data.forEach((entry: SearchHistoryEntry) => {
+      cleaned.forEach((entry) => {
         entry.results.forEach((r: SearchResult) => { map[r.id] = r })
       })
-      set({ history: data, resultDetailMap: map, loading: false })
+      set({ history: cleaned, resultDetailMap: map, loading: false })
     } catch {
       set({ loading: false })
     }
@@ -83,9 +89,16 @@ export const useSearchStore = create<SearchStore>()((set, get) => ({
       return { resultDetailMap: map }
     }),
 
+  updateResultDetail: (id, patch) =>
+    set((s) => {
+      const existing = s.resultDetailMap[id]
+      if (!existing) return s
+      return { resultDetailMap: { ...s.resultDetailMap, [id]: { ...existing, ...patch } } }
+    }),
+
   getResultDetail: (id) => get().resultDetailMap[id],
 
-  updateEntry: (id, patch) =>
+  updateEntry: (id, patch, planId) =>
     set((s) => {
       const idx = s.history.findIndex((e) => e.id === id)
       if (idx === -1) return s
@@ -97,8 +110,25 @@ export const useSearchStore = create<SearchStore>()((set, get) => ({
       if (patch.results) {
         patch.results.forEach((r) => { map[r.id] = r })
       }
+      // 异步同步到后端
+      if (planId) {
+        fetch(`/api/plans/${planId}/search-history/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        }).catch(() => { /* 静默失败 */ })
+      }
       return { history, resultDetailMap: map }
     }),
+
+  removeEntry: (id, planId) => {
+    set((s) => ({
+      history: s.history.filter((e) => e.id !== id),
+    }))
+    fetch(`/api/plans/${planId}/search-history/${id}`, {
+      method: 'DELETE',
+    }).catch(() => { /* 静默失败 */ })
+  },
 
   setActiveSearch: (search) => set({ activeSearch: search }),
 
