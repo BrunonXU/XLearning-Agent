@@ -15,8 +15,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
   if (isUser) {
     return (
       <div className="flex justify-end mt-2 mb-4">
-        <div className="bg-[#F3F4F6] text-[#202124] rounded-2xl px-5 py-3.5 max-w-[72%]">
-          <p className="text-[16px] leading-relaxed whitespace-pre-wrap">{message.content}</p>
+        <div className="bg-[#F1F3F4] text-[#202124] rounded-2xl rounded-tr-sm px-5 py-3.5 max-w-[75%] shadow-sm border border-[#E5E5E5]/50">
+          <p className="text-[15px] leading-relaxed whitespace-pre-wrap font-medium">{message.content}</p>
         </div>
       </div>
     )
@@ -28,7 +28,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
         {isStreaming && !message.content ? (
           <TypingIndicator />
         ) : (
-          <div className="prose max-w-none text-[#202124] leading-8 prose-p:my-5 prose-headings:my-6 prose-li:my-3 prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-pre:bg-[#1E1E1E] prose-pre:text-gray-100 prose-pre:rounded-xl prose-pre:border-none text-[17px] tracking-wide">
+          <div className="prose max-w-none text-[#1A1A18] leading-[1.6] prose-p:my-1.5 prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-bold prose-headings:text-black prose-strong:font-extrabold prose-strong:text-black prose-strong:tracking-tight prose-hr:my-3 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-code:bg-gray-100 prose-code:text-[#D97757] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none prose-pre:bg-[#1E1E1E] prose-pre:text-gray-100 prose-pre:rounded-xl text-[16px] tracking-normal [&_pre_code]:bg-transparent [&_pre_code]:text-gray-100 [&_pre_code]:p-0">
             <ReactMarkdown>{message.content}</ReactMarkdown>
             {isStreaming && (
               <span className="inline-block w-0.5 h-[1em] bg-[#D97757] animate-pulse ml-1 align-middle" />

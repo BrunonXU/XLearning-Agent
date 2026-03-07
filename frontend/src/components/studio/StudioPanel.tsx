@@ -170,7 +170,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
     useStudioStore.setState((s) => ({
       generatedContents: s.generatedContents.filter(c => c.id !== id)
     }))
-    fetch(`/api/generated-contents/${id}`, { method: 'DELETE' }).catch(() => {})
+    fetch(`/api/generated-contents/${id}`, { method: 'DELETE' }).catch(() => { })
     setMenuId(null)
   }
 
@@ -256,31 +256,35 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
             {/* 工具卡片网格 */}
             <div className="px-6 py-4">
               {learnerProfile && (
-                <button onClick={() => { setPendingToolType(null); setShowProfileModal(true) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 mb-3 rounded-xl bg-[#F2DFD3] hover:bg-[#EBD1C1] text-sm text-[#D97757] transition-colors">
-                  <span>📋</span>
-                  <span className="flex-1 text-left truncate">
-                    {learnerProfile.goal ? learnerProfile.goal.slice(0, 20) : '学习者画像'}
-                    {learnerProfile.level ? ` · ${learnerProfile.level}` : ''}
-                    {learnerProfile.duration ? ` · ${learnerProfile.duration}` : ''}
-                  </span>
-                  <span className="text-xs text-[#D97757]/70">编辑</span>
-                </button>
+                <div className="mb-4 flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-sm font-medium text-[#202124] truncate">
+                      {learnerProfile.goal ? learnerProfile.goal : '学习者画像'}
+                    </span>
+                    <span className="text-xs text-[#5F6368] truncate">
+                      {learnerProfile.level ? `· ${learnerProfile.level}` : ''}
+                    </span>
+                  </div>
+                  <button onClick={() => { setPendingToolType(null); setShowProfileModal(true) }}
+                    className="text-xs text-[#D97757] font-medium px-2 py-1 hover:bg-[#F2DFD3] rounded-md transition-colors flex-shrink-0">
+                    编辑画像
+                  </button>
+                </div>
               )}
               <div className="grid grid-cols-3 gap-3">
                 {TOOLS.map(t => (
                   <button key={t.type} onClick={() => handleToolClick(t.type, t.label)}
                     disabled={loadingTools.has(t.type)}
-                    className={`relative flex flex-col justify-between h-[84px] text-left p-3 rounded-2xl ${t.bg} transition-all duration-75 active:scale-[0.98] cursor-pointer group`}>
+                    className={`relative flex flex-col justify-between h-[88px] text-left p-3.5 rounded-2xl ${t.bg} transition-all duration-75 active:scale-[0.98] cursor-pointer group shadow-sm border border-black/5`}>
                     <div className="flex w-full justify-between items-start">
-                      <span className="text-[#444746] text-xl">{t.icon}</span>
-                      <div className="w-6 h-6 rounded-full bg-black/5 flex items-center justify-center text-gray-500">
+                      <span className="text-[#444746] text-[22px] leading-none">{t.icon}</span>
+                      <div className="w-6 h-6 rounded-full bg-black/5 flex items-center justify-center text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                       </div>
                     </div>
-                    <span className="text-[13px] font-medium text-[#444746]">{t.label}</span>
+                    <span className="text-[13px] font-medium text-[#202124]">{t.label}</span>
                     {loadingTools.has(t.type) && (
-                      <div className="absolute inset-0 bg-white/60 rounded-2xl flex items-center justify-center">
+                      <div className="absolute inset-0 bg-white/50 rounded-2xl flex items-center justify-center backdrop-blur-[1px]">
                         <div className="w-5 h-5 border-2 border-[#D97757] border-t-transparent rounded-full animate-spin" />
                       </div>
                     )}
@@ -290,30 +294,31 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
             </div>
 
             {/* 内容列表 */}
-            <div className="px-6 pb-6">
+            <div className="px-4 pb-6 mt-1">
               {allItems.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-8">点击上方工具卡片生成内容</p>
               ) : (
-                <ul className="flex flex-col">
+                <ul className="flex flex-col gap-1">
                   {allItems.map(item => (
                     <li key={item.id}
-                      className="flex items-center gap-3 px-3 py-3.5 rounded-xl border border-transparent hover:border-[#E0E0E0] hover:bg-white hover:shadow-sm active:bg-[#F2DFD3] dark:hover:bg-dark-surface cursor-pointer transition-all duration-75 group relative"
+                      className="flex items-center gap-3 px-3 py-3 rounded-xl border border-transparent hover:bg-[#F8F9FA] cursor-pointer transition-colors group relative"
                       onClick={() => item.kind === 'generated' ? setViewingContent(item as GeneratedContent) : setEditingNote(item as unknown as Note)}>
-                      <span className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
+                      <span className="w-10 h-10 rounded-lg bg-[#F1F3F4] group-hover:bg-white group-hover:shadow-sm transition-colors flex items-center justify-center text-xl flex-shrink-0">
                         {item.kind === 'note' ? '📝' : (TYPE_ICONS[item.type] || '📄')}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[#202124] dark:text-dark-text truncate">{item.title}</p>
-                        <p className="text-xs text-[#5F6368] mt-0.5">
+                        <p className="text-[14px] font-medium text-[#202124] dark:text-dark-text truncate leading-tight mb-1">{item.title}</p>
+                        <p className="text-[12px] text-[#9AA0A6] mt-0.5 flex gap-1 items-center">
                           {item.kind === 'note' ? '笔记' : item.type === 'learning-plan' ? '学习计划' : item.type === 'study-guide' ? '学习指南' : item.type === 'flashcards' ? '闪卡' : item.type === 'quiz' ? '测验' : item.type === 'mind-map' ? '思维导图' : item.type === 'day-summary' ? '今日总结' : item.type === 'progress-report' ? '进度报告' : '报告'}
                           {item.kind === 'generated' && (item as GeneratedContent).version && (item as GeneratedContent).version! > 1 && (
-                            <span className="ml-1 text-[#D97757]">V{(item as GeneratedContent).version}</span>
+                            <span className="text-[#D97757] font-medium">v{(item as GeneratedContent).version}</span>
                           )}
-                          {' · '}{fmt(item.createdAt)}
+                          <span className="mx-0.5">·</span>
+                          <span>{fmt(item.createdAt)}</span>
                         </p>
                       </div>
                       {item.kind === 'generated' && (
-                        <button className="w-8 h-8 rounded-full bg-[#F9F8F6] text-[#D97757] flex items-center justify-center hover:bg-[#F2DFD3] transition-colors">
+                        <button className="w-8 h-8 rounded-full bg-transparent group-hover:bg-[#F2DFD3] text-[#D97757] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                         </button>
                       )}

@@ -41,6 +41,7 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
 
   // 订阅 store 中的深度分析数据更新
   const storeDetail = useSearchStore(s => s.resultDetailMap[initialResult.id])
+  const isDeepAnalysisPending = useSearchStore(s => s.pendingDeepAnalysis.has(initialResult.id))
 
   useEffect(() => { setResult(initialResult) }, [initialResult])
   useEffect(() => { setImageIndex(0) }, [initialResult])
@@ -128,8 +129,8 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
         </span>
       </div>
 
-      {/* Scrollable content — 与 ContentViewer 统一 padding/宽度 */}
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
         {refreshing ? (
           <SkeletonContent />
         ) : (
@@ -144,43 +145,113 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
               {result.url}
             </a>
 
-            {/* Score + core metrics inline */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-[#F9AB00] font-bold text-lg">⭐ {score}<span className="text-xs text-[#5F6368] font-normal">/10</span></span>
+            {/* Score + metrics card */}
+            <div className="flex items-center gap-3 flex-wrap bg-gradient-to-r from-[#FFF8F5] to-[#FFF] dark:from-dark-surface dark:to-dark-bg rounded-xl p-3.5 border border-[#F2DFD3]">
+              <span className="text-[#F9AB00] font-bold text-xl">⭐ {score}<span className="text-xs text-[#5F6368] font-normal">/10</span></span>
+              <div className="w-px h-6 bg-[#E8EAED]" />
               {coreMetrics.map(m => (
-                <span key={m.label} className="inline-flex items-center gap-1 text-sm text-[#5F6368]">
+                <span key={m.label} className="inline-flex items-center gap-1.5 text-sm text-[#5F6368] bg-white dark:bg-dark-surface px-2.5 py-1 rounded-full border border-[#E8EAED]">
                   <span>{m.icon}</span>
-                  <span>{formatNumber(m.value)}</span>
+                  <span className="font-medium">{formatNumber(m.value)}</span>
                 </span>
               ))}
             </div>
 
             {/* Recommendation reason */}
             {result.recommendationReason && (
-              <p className="text-[15px] text-[#5F6368] leading-7">
-                💡 {result.recommendationReason}
-              </p>
+              <div className="flex items-start gap-2 bg-[#FEF7E0] dark:bg-dark-surface rounded-lg px-3.5 py-2.5 border border-[#FDE68A]/50">
+                <span className="text-base mt-0.5">💡</span>
+                <p className="text-[14px] text-[#78590A] dark:text-dark-text leading-6">{result.recommendationReason}</p>
+              </div>
+            )}
+
+            {/* Image carousel — 大图竖直展示 */}
+            {images.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text flex items-center gap-1.5">
+                    <span className="w-1 h-4 bg-[#E8EAED] rounded-full" />
+                    🖼️ 图片
+                  </h3>
+                  <span className="text-xs text-[#9AA0A6] bg-[#F1F3F4] px-2 py-0.5 rounded-full">{imageIndex + 1} / {images.length}</span>
+                </div>
+                <div className="relative rounded-xl overflow-hidden border border-[#DADCE0] dark:border-dark-border bg-[#FAFAFA]">
+                  <a href={images[imageIndex]} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={images[imageIndex]}
+                      alt={`图片 ${imageIndex + 1}`}
+                      className="w-full object-contain"
+                      style={{ maxHeight: '70vh' }}
+                      loading="lazy"
+                    />
+                  </a>
+                  {images.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setImageIndex(i => (i - 1 + images.length) % images.length)}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors text-lg"
+                        aria-label="上一张"
+                      >‹</button>
+                      <button
+                        onClick={() => setImageIndex(i => (i + 1) % images.length)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors text-lg"
+                        aria-label="下一张"
+                      >›</button>
+                    </>
+                  )}
+                </div>
+              </section>
             )}
 
             {/* AI Content Summary → 信息整理 */}
             {result.contentSummary && (
               <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-1">📋 信息整理</h3>
-                <p className="text-[15px] text-[#3C4043] leading-7 bg-[#F8F9FA] dark:bg-dark-surface rounded-lg p-3 whitespace-pre-line">
-                  {result.contentSummary}
-                </p>
+                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2 flex items-center gap-1.5">
+                  <span className="w-1 h-4 bg-[#D97757] rounded-full" />
+                  📋 信息整理
+                </h3>
+                <div className="bg-[#F8F9FA] dark:bg-dark-surface rounded-xl p-4 space-y-1.5">
+                  {result.contentSummary.split('→').map((segment, idx) => {
+                    const text = segment.trim()
+                    if (!text) return null
+                    return idx === 0 ? (
+                      <p key={idx} className="text-[14px] text-[#202124] dark:text-dark-text leading-6 font-medium">{text}</p>
+                    ) : (
+                      <div key={idx} className="flex items-start gap-2 text-[14px] text-[#3C4043] leading-6">
+                        <span className="text-[#D97757] mt-0.5 flex-shrink-0">→</span>
+                        <span>{text}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* 原文内容 — 加入素材后的完整阅读 */}
+            {result.contentText && (
+              <section>
+                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2 flex items-center gap-1.5">
+                  <span className="w-1 h-4 bg-[#5F6368] rounded-full" />
+                  📄 原文内容
+                </h3>
+                <div className="bg-white dark:bg-dark-surface rounded-xl border border-[#E8EAED] p-4">
+                  <p className="text-[14px] text-[#3C4043] dark:text-dark-text leading-7 whitespace-pre-line">{result.contentText}</p>
+                </div>
               </section>
             )}
 
             {/* 核心观点 */}
             {result.keyPoints && result.keyPoints.length > 0 && (
               <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2">🎯 核心观点</h3>
-                <div className="space-y-1.5">
+                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2 flex items-center gap-1.5">
+                  <span className="w-1 h-4 bg-[#4285F4] rounded-full" />
+                  🎯 核心观点
+                </h3>
+                <div className="grid gap-2">
                   {result.keyPoints.map((point, idx) => (
-                    <div key={idx} className="flex items-start gap-2 text-[15px] text-[#3C4043] leading-6">
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#D97757]/10 text-[#D97757] text-xs flex items-center justify-center font-medium mt-0.5">{idx + 1}</span>
-                      <span>{point}</span>
+                    <div key={idx} className="flex items-start gap-2.5 bg-[#EEF4FF] dark:bg-dark-surface rounded-lg px-3.5 py-2.5 border border-[#D2E3FC]/60">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#4285F4] text-white text-xs flex items-center justify-center font-semibold">{idx + 1}</span>
+                      <span className="text-[14px] text-[#202124] dark:text-dark-text leading-6">{point}</span>
                     </div>
                   ))}
                 </div>
@@ -190,10 +261,14 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
             {/* 关键数据/事实 */}
             {result.keyFacts && result.keyFacts.length > 0 && (
               <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2">📊 关键数据</h3>
+                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2 flex items-center gap-1.5">
+                  <span className="w-1 h-4 bg-[#34A853] rounded-full" />
+                  📊 关键数据
+                </h3>
                 <div className="flex flex-wrap gap-2">
                   {result.keyFacts.map((fact, idx) => (
-                    <span key={idx} className="inline-block text-[13px] text-[#3C4043] bg-[#E8F0FE] rounded-lg px-3 py-1.5 leading-5">
+                    <span key={idx} className="inline-flex items-center gap-1.5 text-[13px] text-[#137333] bg-[#E6F4EA] rounded-lg px-3 py-2 leading-5 border border-[#CEEAD6]">
+                      <span className="text-[#34A853]">•</span>
                       {fact}
                     </span>
                   ))}
@@ -204,12 +279,18 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
             {/* 方法论/步骤 */}
             {result.methodology && result.methodology.length > 0 && (
               <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2">📝 方法/步骤</h3>
-                <div className="bg-[#F8F9FA] dark:bg-dark-surface rounded-lg p-3 space-y-2">
+                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2 flex items-center gap-1.5">
+                  <span className="w-1 h-4 bg-[#FBBC04] rounded-full" />
+                  📝 方法/步骤
+                </h3>
+                <div className="bg-[#F8F9FA] dark:bg-dark-surface rounded-xl p-4 space-y-3">
                   {result.methodology.map((step, idx) => (
-                    <div key={idx} className="flex items-start gap-2.5 text-[14px] text-[#3C4043] leading-6">
-                      <span className="flex-shrink-0 text-[#D97757] font-mono text-xs mt-1">{String(idx + 1).padStart(2, '0')}</span>
-                      <span>{step}</span>
+                    <div key={idx} className="flex items-start gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className="w-7 h-7 rounded-full bg-[#FEF7E0] border border-[#FBBC04] text-[#78590A] text-xs flex items-center justify-center font-semibold">{idx + 1}</span>
+                        {idx < result.methodology!.length - 1 && <div className="w-px h-3 bg-[#DADCE0] mt-1" />}
+                      </div>
+                      <span className="text-[14px] text-[#3C4043] leading-6 pt-1">{step}</span>
                     </div>
                   ))}
                 </div>
@@ -219,7 +300,10 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
             {/* 可信度评估 */}
             {result.credibility && (result.credibility.timeliness != null || result.credibility.authority != null) && (
               <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2">🛡️ 可信度评估</h3>
+                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2 flex items-center gap-1.5">
+                  <span className="w-1 h-4 bg-[#9AA0A6] rounded-full" />
+                  🛡️ 可信度评估
+                </h3>
                 <div className="grid grid-cols-2 gap-2">
                   {([
                     { key: 'timeliness' as const, label: '时效性', icon: '🕐' },
@@ -233,15 +317,15 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
                     const pct = (val / 10) * 100
                     const color = val >= 7 ? '#34A853' : val >= 4 ? '#F9AB00' : '#EA4335'
                     return (
-                      <div key={dim.key} className="bg-[#F8F9FA] dark:bg-dark-surface rounded-lg p-2.5">
-                        <div className="flex items-center justify-between mb-1">
+                      <div key={dim.key} className="bg-[#F8F9FA] dark:bg-dark-surface rounded-lg p-2.5 border border-[#E8EAED]">
+                        <div className="flex items-center justify-between mb-1.5">
                           <span className="text-xs text-[#5F6368]">{dim.icon} {dim.label}</span>
-                          <span className="text-xs font-semibold" style={{ color }}>{val}/10</span>
+                          <span className="text-xs font-bold" style={{ color }}>{val}/10</span>
                         </div>
-                        <div className="w-full h-1.5 bg-[#E8EAED] rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+                        <div className="w-full h-2 bg-[#E8EAED] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
                         </div>
-                        {note && <p className="text-[11px] text-[#9AA0A6] mt-1 leading-4">{note}</p>}
+                        {note && <p className="text-[11px] text-[#9AA0A6] mt-1.5 leading-4">{note}</p>}
                       </div>
                     )
                   })}
@@ -249,8 +333,9 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
               </section>
             )}
 
-            {/* 深度分析加载提示 — 已加入素材但分析尚未完成 */}
-            {!result.keyPoints?.length && !result.credibility?.timeliness && storeDetail && (
+            {/* 高赞评论 — 卡片样式，小字斜体 */}
+            {/* 深度分析加载提示 — 仅在实际触发了深度分析时显示 */}
+            {isDeepAnalysisPending && !result.keyPoints?.length && (
               <div className="flex items-center gap-2 py-3 text-xs text-[#9AA0A6]">
                 <span className="inline-flex gap-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#D97757] animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -260,63 +345,35 @@ export const PreviewPopup: React.FC<PreviewPopupProps> = ({
                 <span>深度分析中，核心观点和可信度评估即将呈现...</span>
               </div>
             )}
-
-            {/* Image carousel */}
-            {images.length > 0 && (
-              <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2">🖼️ 图片 ({imageIndex + 1}/{images.length})</h3>
-                <div className="relative rounded-lg overflow-hidden border border-[#DADCE0] dark:border-dark-border bg-[#F8F9FA]">
-                  <a href={images[imageIndex]} target="_blank" rel="noopener noreferrer">
-                    <img
-                      src={images[imageIndex]}
-                      alt={`图片 ${imageIndex + 1}`}
-                      className="w-full max-h-[400px] object-contain"
-                      loading="lazy"
-                    />
-                  </a>
-                  {images.length > 1 && (
-                    <>
-                      <button
-                        onClick={() => setImageIndex(i => (i - 1 + images.length) % images.length)}
-                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors"
-                        aria-label="上一张"
-                      >
-                        ‹
-                      </button>
-                      <button
-                        onClick={() => setImageIndex(i => (i + 1) % images.length)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors"
-                        aria-label="下一张"
-                      >
-                        ›
-                      </button>
-                    </>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* Top comments — 放在图片下面 */}
             {comments.length > 0 && (
               <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2">🔥 高赞评论</h3>
-                <div className="flex flex-col gap-2">
+                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-2 flex items-center gap-1.5">
+                  <span className="w-1 h-4 bg-[#EA4335] rounded-full" />
+                  🔥 高赞评论
+                </h3>
+                <div className="space-y-2">
                   {comments.map((text, idx) => (
-                    <div key={idx} className="text-[15px] text-[#3C4043] bg-[#F8F9FA] dark:bg-dark-surface rounded-lg px-3 py-2 leading-7">
-                      {text}
+                    <div key={idx} className="flex items-start gap-0 rounded-xl overflow-hidden border border-[#E8EAED] bg-white dark:bg-dark-surface">
+                      <div className="w-1 self-stretch bg-[#D97757]/60 flex-shrink-0" />
+                      <div className="flex-1 px-3.5 py-2.5">
+                        <p className="text-[12px] text-[#5F6368] dark:text-dark-text-secondary leading-5 italic">{text}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
               </section>
             )}
 
-            {/* Comment summary */}
+            {/* 评论结论 — callout 样式 */}
             {result.commentSummary && (
               <section>
-                <h3 className="text-[15px] font-medium text-[#202124] dark:text-dark-text mb-1">💬 评论结论</h3>
-                <p className="text-[15px] text-[#3C4043] leading-7 bg-[#F8F9FA] dark:bg-dark-surface rounded-lg p-3">
-                  {result.commentSummary}
-                </p>
+                <div className="flex items-start gap-2.5 bg-[#F0F4FF] dark:bg-dark-surface rounded-xl px-4 py-3 border border-[#D2E3FC]/60">
+                  <span className="text-lg mt-0.5">💬</span>
+                  <div>
+                    <p className="text-xs font-medium text-[#4285F4] mb-1">评论结论</p>
+                    <p className="text-[14px] text-[#3C4043] dark:text-dark-text leading-6">{result.commentSummary}</p>
+                  </div>
+                </div>
               </section>
             )}
 

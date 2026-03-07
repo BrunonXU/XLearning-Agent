@@ -1,9 +1,20 @@
 import React, { useState } from 'react'
 import { ConfirmModal } from '../ui/Modal'
-import type { Material } from '../../types'
+import type { Material, PlatformType } from '../../types'
+
+const PLATFORM_ICONS: Record<PlatformType, string> = {
+  bilibili: '📺',
+  youtube: '🎬',
+  google: '🌐',
+  github: '🔗',
+  xiaohongshu: '📕',
+  other: '🌐',
+}
 
 export const MaterialIcon = ({ material, className = "" }: { material: Material, className?: string }) => {
   const name = material.name.toLowerCase()
+
+  // 本地文件保留原有图标
   if (name.endsWith('.pdf')) {
     return (
       <div className={`flex items-center justify-center bg-transparent border-2 border-[#D93025] text-[#D93025] rounded-md font-bold ${className}`}>
@@ -20,11 +31,12 @@ export const MaterialIcon = ({ material, className = "" }: { material: Material,
     )
   }
 
-  // Default URL / Web
+  // 搜索来源材料 — 使用平台 emoji 图标（与搜索面板一致）
+  const icon = PLATFORM_ICONS[material.type] || '🌐'
   return (
-    <div className={`flex items-center justify-center bg-transparent border-2 border-[#D97757] text-[#D97757] rounded-full font-bold ${className}`}>
-      🌐
-    </div>
+    <span className={`flex items-center justify-center text-lg ${className}`} aria-hidden="true">
+      {icon}
+    </span>
   )
 }
 
@@ -67,6 +79,7 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
   }
 
   const displayName = material.name.length > 22 ? material.name.slice(0, 22) + '…' : material.name
+  const isUnviewed = !material.viewedAt
 
   return (
     <>
@@ -79,9 +92,11 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
         onDragEnter={onDragEnter}
         onDragEnd={onDragEnd}
         onDragOver={onDragOver}
-        className={`flex items-center gap-3 h-12 px-3 rounded-xl cursor-default transition-transform duration-200 focus-visible:ring-2 focus-visible:ring-[#D97757] outline-none ${isSelected
+        className={`flex items-center gap-3 h-12 px-3 rounded-xl cursor-default transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#D97757] outline-none ${isSelected
           ? 'bg-[#F2DFD3] border-l-[3px] border-[#D97757]'
-          : 'hover:bg-[#F1F3F4]'
+          : isUnviewed
+            ? 'bg-[#FFFBEB] border-l-[3px] border-[#F9AB00]/60 hover:bg-[#FEF7E0]'
+            : 'hover:bg-[#F1F3F4]'
           }`}
         onClick={onClick}
         onKeyDown={e => {

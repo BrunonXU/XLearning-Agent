@@ -539,6 +539,7 @@ class SearchOrchestrator:
             content_summary=scored.content_summary,
             comment_summary=scored.comment_summary,
             image_urls=list(raw.image_urls) if raw.image_urls else [],
+            content_text=raw.content_snippet or "",
             key_points=list(scored.key_points) if scored.key_points else [],
             key_facts=list(scored.key_facts) if scored.key_facts else [],
             methodology=list(scored.methodology) if scored.methodology else [],

@@ -9,6 +9,7 @@ export interface Material {
   url?: string;
   status: 'parsing' | 'chunking' | 'ready' | 'error';
   addedAt: string;        // ISO 8601
+  viewedAt?: string;      // 首次查看时间，未查看则为 undefined
 }
 
 export interface SearchResult {
@@ -24,6 +25,7 @@ export interface SearchResult {
   engagementMetrics?: Record<string, any>;  // 互动指标
   imageUrls?: string[];                 // 图片 URL 列表
   topComments?: string[];               // 高赞评论文本列表
+  contentText?: string;                  // 正文原文
   // 结构化知识提取
   keyPoints?: string[];                 // 核心观点（3-5 条）
   keyFacts?: string[];                  // 关键数据/事实

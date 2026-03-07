@@ -18,6 +18,8 @@ interface SearchStore {
   loading: boolean
   /** 当前进行中的搜索（组件卸载后仍保留） */
   activeSearch: ActiveSearch | null
+  /** 正在进行深度分析的 materialId 集合 */
+  pendingDeepAnalysis: Set<string>
 
   loadHistory: (planId: string) => Promise<void>
   addEntry: (planId: string, entry: SearchHistoryEntry) => void
@@ -29,6 +31,8 @@ interface SearchStore {
   removeEntry: (id: string, planId: string) => void
   setActiveSearch: (search: ActiveSearch | null) => void
   updateActiveSearch: (patch: Partial<ActiveSearch>) => void
+  markDeepAnalysisPending: (id: string) => void
+  markDeepAnalysisDone: (id: string) => void
 }
 
 export const useSearchStore = create<SearchStore>()((set, get) => ({
@@ -36,6 +40,7 @@ export const useSearchStore = create<SearchStore>()((set, get) => ({
   resultDetailMap: {},
   loading: false,
   activeSearch: null,
+  pendingDeepAnalysis: new Set(),
 
   loadHistory: async (planId: string) => {
     set({ loading: true })
@@ -136,5 +141,19 @@ export const useSearchStore = create<SearchStore>()((set, get) => ({
     set((s) => {
       if (!s.activeSearch) return s
       return { activeSearch: { ...s.activeSearch, ...patch } }
+    }),
+
+  markDeepAnalysisPending: (id) =>
+    set((s) => {
+      const next = new Set(s.pendingDeepAnalysis)
+      next.add(id)
+      return { pendingDeepAnalysis: next }
+    }),
+
+  markDeepAnalysisDone: (id) =>
+    set((s) => {
+      const next = new Set(s.pendingDeepAnalysis)
+      next.delete(id)
+      return { pendingDeepAnalysis: next }
     }),
 }))

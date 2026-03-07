@@ -62,6 +62,7 @@ class SearchResult(BaseModel):
     key_facts: List[str] = Field(default_factory=list)        # 关键数据/事实
     methodology: List[str] = Field(default_factory=list)      # 方法论/步骤
     credibility: Dict[str, Any] = Field(default_factory=dict) # 可信度子维度
+    content_text: str = ""  # 正文原文（用于加入素材后的完整阅读）
 
     def to_dict(self) -> dict:
         """序列化为字典"""

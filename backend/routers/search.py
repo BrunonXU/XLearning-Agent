@@ -40,6 +40,7 @@ class SearchResultItem(BaseModel):
     engagementMetrics: Dict[str, Any] = {}
     imageUrls: List[str] = []
     topComments: List[str] = []
+    contentText: str = ""
     keyPoints: List[str] = []
     keyFacts: List[str] = []
     methodology: List[str] = []
@@ -203,6 +204,7 @@ def _to_search_result_item(result_dict: dict) -> SearchResultItem:
         engagementMetrics=result_dict.get("engagement_metrics", {}),
         imageUrls=result_dict.get("image_urls", []),
         topComments=result_dict.get("comments_preview", []),
+        contentText=result_dict.get("content_text", ""),
         keyPoints=result_dict.get("key_points", []),
         keyFacts=result_dict.get("key_facts", []),
         methodology=result_dict.get("methodology", []),

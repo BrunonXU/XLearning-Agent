@@ -78,7 +78,7 @@ export const useSourceStore = create<SourceStore>()((set) => ({
   },
 
   addMaterial: (m) =>
-    set((s) => ({ materials: [...s.materials, m] })),
+    set((s) => ({ materials: [m, ...s.materials] })),
 
   setMaterials: (mats) => set({ materials: mats }),
 

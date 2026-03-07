@@ -64,6 +64,11 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
     const mat = materials.find(m => m.id === id)
     if (!mat) return
 
+    // 标记为已查看
+    if (!mat.viewedAt) {
+      useSourceStore.getState().updateMaterial(id, { viewedAt: new Date().toISOString() })
+    }
+
     if (isLocalFile(mat)) {
       setViewingMaterial(mat)
       onReadingChange?.(true)
@@ -127,6 +132,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
               engagementMetrics: r.engagementMetrics,
               imageUrls: r.imageUrls,
               topComments: r.topComments,
+              contentText: r.contentText,
             },
           })),
         }),
@@ -135,6 +141,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
 
     // 异步触发深度分析（不阻塞 UI）
     results.forEach(r => {
+      useSearchStore.getState().markDeepAnalysisPending(r.id)
       fetch('/api/resource/deep-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,6 +169,9 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
           }
         })
         .catch(() => { /* 静默失败 */ })
+        .finally(() => {
+          useSearchStore.getState().markDeepAnalysisDone(r.id)
+        })
     })
   }
 

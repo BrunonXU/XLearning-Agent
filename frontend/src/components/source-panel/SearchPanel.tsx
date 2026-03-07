@@ -69,6 +69,7 @@ function parseResults(evt: any): SearchResult[] {
       engagementMetrics: item.engagementMetrics,
       imageUrls: item.imageUrls,
       topComments: item.topComments,
+      contentText: item.contentText,
       keyPoints: item.keyPoints,
       keyFacts: item.keyFacts,
       methodology: item.methodology,
