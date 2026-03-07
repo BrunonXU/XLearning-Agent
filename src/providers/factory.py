@@ -14,6 +14,7 @@ from typing import Dict, Type, Optional
 
 from .base import LLMProvider, EmbeddingProvider
 from .tongyi import TongyiProvider, TongyiEmbeddingProvider
+from .openai_compatible import OpenAICompatibleProvider
 
 
 class ProviderFactory:
@@ -27,9 +28,9 @@ class ProviderFactory:
     _llm_providers: Dict[str, Type[LLMProvider]] = {
         "tongyi": TongyiProvider,
         "qwen": TongyiProvider,  # 别名
-        # 未来扩展：
-        # "openai": OpenAIProvider,
-        # "deepseek": DeepSeekProvider,
+        "openai": OpenAICompatibleProvider,
+        "deepseek": OpenAICompatibleProvider,
+        "zhipu": OpenAICompatibleProvider,
     }
     
     # 注册的 Embedding Provider
@@ -76,6 +77,9 @@ class ProviderFactory:
         
         # 创建实例
         provider_class = cls._llm_providers[provider_name]
+        # OpenAICompatibleProvider 需要 provider_name 来查找预设配置
+        if provider_class is OpenAICompatibleProvider:
+            return provider_class(model=model, provider_name=provider_name, **kwargs)
         return provider_class(model=model, **kwargs)
     
     @classmethod

@@ -14,6 +14,7 @@ interface SourceStore {
   loadMaterials: (planId: string) => Promise<void>
   addMaterial: (m: Material) => void
   setMaterials: (mats: Material[]) => void
+  reorderMaterials: (planId: string, mats: Material[]) => Promise<void>
   removeMaterial: (id: string) => void
   updateMaterial: (id: string, updates: Partial<Material>) => void
   updateMaterialStatus: (id: string, status: Material['status']) => void
@@ -81,6 +82,19 @@ export const useSourceStore = create<SourceStore>()((set) => ({
     set((s) => ({ materials: [m, ...s.materials] })),
 
   setMaterials: (mats) => set({ materials: mats }),
+
+  reorderMaterials: async (planId, mats) => {
+    set({ materials: mats })
+    try {
+      await fetch(`/api/plans/${planId}/materials/reorder`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds: mats.map(m => m.id) }),
+      })
+    } catch (e) {
+      console.warn('reorder persist failed', e)
+    }
+  },
 
   removeMaterial: (id) =>
     set((s) => ({ materials: s.materials.filter((m) => m.id !== id) })),

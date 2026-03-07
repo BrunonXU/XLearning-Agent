@@ -29,7 +29,30 @@ class SessionContext:
         if self._tutor is None:
             logger.info(f"[SessionContext] Initializing TutorAgent for plan {self.plan_id}")
             from src.agents.tutor import TutorAgent
-            self._tutor = TutorAgent()
+            from src.providers.factory import ProviderFactory
+            from backend import database
+            import os
+
+            # 从 settings 表读取用户选择的 provider/model
+            provider_name = database.get_setting("llm_provider") or os.getenv("DEFAULT_PROVIDER", "tongyi")
+            model = database.get_setting("llm_model") or os.getenv("DEFAULT_MODEL", "qwen-turbo")
+
+            # 如果用户在前端保存了 API key，设置到环境变量
+            saved_key = database.get_setting(f"{provider_name}_api_key")
+            if saved_key:
+                from src.providers.openai_compatible import PROVIDER_PRESETS
+                preset = PROVIDER_PRESETS.get(provider_name, {})
+                env_key = preset.get("env_key", "")
+                if env_key:
+                    os.environ[env_key] = saved_key
+
+            try:
+                llm = ProviderFactory.create_llm(provider_name=provider_name, model=model)
+            except Exception as e:
+                logger.warning(f"[SessionContext] Failed to create {provider_name}/{model}: {e}, falling back to tongyi")
+                llm = ProviderFactory.create_llm(provider_name="tongyi")
+
+            self._tutor = TutorAgent(llm_provider=llm)
         return self._tutor
 
     @property

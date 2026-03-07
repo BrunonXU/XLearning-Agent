@@ -317,6 +317,19 @@ async def delete_material(material_id: str, plan_id: str = ""):
         raise HTTPException(status_code=404, detail="Material not found")
 
 
+@router.patch("/material/{material_id}/viewed", status_code=200)
+async def mark_material_viewed(material_id: str):
+    """标记材料为已读"""
+    conn = database.get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    with conn:
+        cur = conn.execute(
+            "UPDATE materials SET viewed_at = ? WHERE id = ? AND viewed_at IS NULL",
+            (now, material_id),
+        )
+    return {"ok": True, "updated": cur.rowcount > 0}
+
+
 @router.get("/material/{material_id}/content")
 async def get_material_content(material_id: str, plan_id: str = ""):
     """获取材料的原始文本内容（用于 ContentViewer 展示）"""
@@ -388,6 +401,17 @@ class SearchMaterialItem(BaseModel):
 
 class BatchAddRequest(BaseModel):
     items: list[SearchMaterialItem]
+
+
+class ReorderRequest(BaseModel):
+    orderedIds: list[str]
+
+
+@router.patch("/plans/{plan_id}/materials/reorder", status_code=200)
+async def reorder_materials(plan_id: str, body: ReorderRequest):
+    """持久化材料拖拽排序"""
+    database.update_material_order(plan_id, body.orderedIds)
+    return {"ok": True}
 
 
 @router.post("/materials/from-search", status_code=201)

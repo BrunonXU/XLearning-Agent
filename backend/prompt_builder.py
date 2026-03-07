@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from langsmith import traceable
+
 from backend import database
 
 logger = logging.getLogger(__name__)
@@ -192,6 +194,7 @@ class PromptBuilder:
     def __init__(self, rag_engine=None):
         self.rag_engine = rag_engine
 
+    @traceable(name="prompt_builder.build")
     def build(self, content_type: str, learning_context) -> tuple[str, str]:
         """构建完整 prompt 和 system_prompt，可直接发给 LLM。
 

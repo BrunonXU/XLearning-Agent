@@ -18,6 +18,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend import database
+from langsmith import traceable
+import langsmith as ls
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -219,6 +221,11 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict], materia
     full_response = ""
     src_payload = []
     t_start = time.perf_counter()
+    _ls_rt = ls.trace(
+        "chat.stream_response", "chain",
+        inputs={"message": message, "history_len": len(history), "material_ids": material_ids or []},
+    )
+    _ls_rt.__enter__()
     try:
         for chunk in ctx.tutor.stream_response(
             user_input=message,
@@ -261,6 +268,13 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict], materia
     finally:
         t_end = time.perf_counter()
         duration_ms = round((t_end - t_start) * 1000, 1)
+
+        # 结束 LangSmith trace
+        try:
+            _ls_rt.end(outputs={"response": full_response[:2000], "chunks": chunk_count})
+            _ls_rt.__exit__(None, None, None)
+        except Exception:
+            pass
 
         # Persist assistant message after stream completes
         if full_response:

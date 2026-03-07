@@ -67,6 +67,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
     // 标记为已查看
     if (!mat.viewedAt) {
       useSourceStore.getState().updateMaterial(id, { viewedAt: new Date().toISOString() })
+      fetch(`/api/material/${id}/viewed`, { method: 'PATCH' }).catch(() => {})
     }
 
     if (isLocalFile(mat)) {
@@ -274,6 +275,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
             <UploadArea planId={planId} />
             <MaterialList
               materials={materials}
+              planId={planId}
               selectedId={selectedId ?? undefined}
               onSelect={handleSelect}
               onRemove={handleRemove}

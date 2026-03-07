@@ -15,6 +15,8 @@ TODO (Day 5):
 import logging
 from typing import Optional, List, Dict, Any, Generator
 
+from langsmith import traceable
+
 from .base import BaseAgent
 from src.core.models import SessionMode, Quiz, Question, SearchResult
 from src.rag import RAGEngine
@@ -103,6 +105,7 @@ class TutorAgent(BaseAgent):
         """设置进度追踪器"""
         self._progress_tracker = tracker
 
+    @traceable(name="tutor.generate")
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """纯 LLM 调用，不做任何 prompt 加工。供 PromptBuilder 等外部模块使用。"""
         return self._call_llm(prompt, system_prompt=system_prompt)
@@ -150,6 +153,7 @@ class TutorAgent(BaseAgent):
             return ""
 
     
+    @traceable(name="tutor.run")
     def run(
         self,
         user_input: str,
@@ -456,6 +460,8 @@ class TutorAgent(BaseAgent):
         
         return response
     
+    @traceable(name="tutor.stream_response")
+    @traceable(name="tutor.stream_response")
     def stream_response(
         self,
         user_input: str,

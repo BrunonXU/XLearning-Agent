@@ -5,13 +5,14 @@ import { useSourceStore } from '../../store/sourceStore'
 
 interface MaterialListProps {
   materials: Material[]
+  planId: string
   selectedId?: string
   onSelect: (id: string) => void
   onRemove: (id: string) => void
 }
 
 export const MaterialList: React.FC<MaterialListProps> = ({
-  materials, selectedId, onSelect, onRemove,
+  materials, planId, selectedId, onSelect, onRemove,
 }) => {
   const dragItem = React.useRef<number | null>(null)
   const dragOverItem = React.useRef<number | null>(null)
@@ -77,7 +78,7 @@ export const MaterialList: React.FC<MaterialListProps> = ({
                   const _mats = [...materials]
                   const dragged = _mats.splice(dragItem.current, 1)[0]
                   _mats.splice(dragOverItem.current, 0, dragged)
-                  useSourceStore.getState().setMaterials(_mats)
+                  useSourceStore.getState().reorderMaterials(planId, _mats)
                 }
                 dragItem.current = null
                 dragOverItem.current = null

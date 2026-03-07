@@ -142,10 +142,32 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_search_history_plan_id ON search_history(plan_id);
         """)
+        # Settings 表（Provider 配置等全局设置）
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
         # Migration: add status column to search_history if missing
         try:
             conn.execute("ALTER TABLE search_history ADD COLUMN status TEXT DEFAULT 'done'")
             logger.info("Added status column to search_history")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Migration: add sort_order column to materials if missing
+        try:
+            conn.execute("ALTER TABLE materials ADD COLUMN sort_order INTEGER DEFAULT 0")
+            logger.info("Added sort_order column to materials")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Migration: add viewed_at column to materials if missing
+        try:
+            conn.execute("ALTER TABLE materials ADD COLUMN viewed_at TEXT")
+            logger.info("Added viewed_at column to materials")
         except sqlite3.OperationalError:
             pass  # column already exists
         logger.info("Database initialized successfully at %s", _DB_PATH)
@@ -297,7 +319,7 @@ def insert_material(mat: dict) -> dict:
 def get_materials(plan_id: str) -> List[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM materials WHERE plan_id = ? ORDER BY added_at ASC",
+        "SELECT * FROM materials WHERE plan_id = ? ORDER BY sort_order ASC, added_at ASC",
         (plan_id,),
     ).fetchall()
     results = []
@@ -367,6 +389,22 @@ def delete_material(material_id: str) -> bool:
                 "UPDATE plans SET source_count = MAX(source_count - 1, 0) WHERE id = ?",
                 (plan_id,),
             )
+        return True
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
+def update_material_order(plan_id: str, ordered_ids: List[str]) -> bool:
+    """按前端传入的 id 顺序批量更新 sort_order。"""
+    conn = get_connection()
+    try:
+        with conn:
+            for idx, mid in enumerate(ordered_ids):
+                conn.execute(
+                    "UPDATE materials SET sort_order = ? WHERE id = ? AND plan_id = ?",
+                    (idx, mid, plan_id),
+                )
         return True
     except sqlite3.Error as e:
         logger.error("Database error: %s", e)
@@ -585,6 +623,7 @@ def upsert_learner_profile(profile: dict) -> dict:
         data["extra"] = json.dumps(data["extra"], ensure_ascii=False)
     now = datetime.now(timezone.utc).isoformat()
     data.setdefault("created_at", now)
+    data.setdefault("extra", "{}")
     data["updated_at"] = now
     try:
         with conn:
@@ -726,3 +765,24 @@ def delete_search_history(plan_id: str) -> bool:
         raise RuntimeError(f"Database error: {e}")
 
 
+
+
+# ---------------------------------------------------------------------------
+# Settings KV store
+# ---------------------------------------------------------------------------
+
+def get_setting(key: str) -> Optional[str]:
+    """获取全局设置值"""
+    conn = get_connection()
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def upsert_setting(key: str, value: str) -> None:
+    """插入或更新全局设置"""
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+        (key, value, value),
+    )
+    conn.commit()
