@@ -92,11 +92,9 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
         onDragEnter={onDragEnter}
         onDragEnd={onDragEnd}
         onDragOver={onDragOver}
-        className={`flex items-center gap-3 h-12 px-3 rounded-xl cursor-default transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#D97757] outline-none ${isSelected
-          ? 'bg-[#F2DFD3] border-l-[3px] border-[#D97757]'
-          : isUnviewed
-            ? 'bg-[#FFFBEB] border-l-[3px] border-[#F9AB00]/60 hover:bg-[#FEF7E0]'
-            : 'hover:bg-[#F1F3F4]'
+        className={`flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-default transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#D97757] outline-none ${isSelected
+          ? 'bg-[#F2DFD3] border-l-[3px] border-[#D97757] px-2'
+          : 'hover:bg-[#F1F3F4] border-l-[3px] border-transparent px-2'
           }`}
         onClick={onClick}
         onKeyDown={e => {
@@ -106,7 +104,12 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <MaterialIcon material={material} className="w-6 h-7 text-[8px] flex-shrink-0" />
+        <div className="relative flex items-center justify-center flex-shrink-0 w-8 h-8">
+          {isUnviewed && !isSelected && (
+            <div className="absolute -left-1.5 w-1.5 h-1.5 rounded-full bg-[#D97757]" />
+          )}
+          <MaterialIcon material={material} className="w-6 h-7 text-[8px]" />
+        </div>
         {editingName ? (
           <input
             autoFocus
@@ -122,7 +125,9 @@ export const MaterialItem: React.FC<MaterialItemProps> = ({
             aria-label="重命名材料"
           />
         ) : (
-          <span className="flex-1 text-sm text-[#202124] truncate">{displayName}</span>
+          <span className={`flex-1 text-sm truncate transition-colors ${isUnviewed && !isSelected ? 'text-gray-900 font-medium' : 'text-[#202124] font-normal'}`}>
+            {displayName}
+          </span>
         )}
 
         {hovered && !editingName ? (

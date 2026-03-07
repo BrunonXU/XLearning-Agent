@@ -11,6 +11,9 @@ import asyncio
 import logging
 import platform
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Windows 上确保事件循环支持子进程（Playwright 需要）
 # 必须在任何事件循环创建之前设置
 if platform.system() == "Windows":

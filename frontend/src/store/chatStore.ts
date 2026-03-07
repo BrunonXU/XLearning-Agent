@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import type { ChatMessage } from '../types'
+import type { ChatMessage, Material } from '../types'
+
+/** 聊天输入框中附加的材料引用 */
+export interface AttachedMaterial {
+  id: string
+  name: string
+  platform: Material['type']
+}
 
 interface ChatStore {
   messages: ChatMessage[]
@@ -7,6 +14,8 @@ interface ChatStore {
   isStreaming: boolean
   streamingContent: string
   loading: boolean
+  /** 当前输入框附加的材料列表 */
+  attachedMaterials: AttachedMaterial[]
 
   loadMessages: (planId: string) => Promise<void>
   addMessage: (msg: ChatMessage) => void
@@ -17,6 +26,12 @@ interface ChatStore {
   setSuggestedQuestions: (qs: string[]) => void
   clearMessages: () => void
   getHistory: () => ChatMessage[]
+  /** 附加材料到输入框 */
+  attachMaterial: (m: AttachedMaterial) => void
+  /** 移除附加的材料 */
+  detachMaterial: (id: string) => void
+  /** 清空附加材料 */
+  clearAttached: () => void
 }
 
 export const useChatStore = create<ChatStore>()((set, get) => ({
@@ -25,6 +40,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   isStreaming: false,
   streamingContent: '',
   loading: false,
+  attachedMaterials: [],
 
   loadMessages: async (planId: string) => {
     set({ loading: true })
@@ -73,4 +89,15 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     const { messages } = get()
     return messages.slice(-12)
   },
+
+  attachMaterial: (m) =>
+    set((s) => {
+      if (s.attachedMaterials.some(a => a.id === m.id)) return s
+      return { attachedMaterials: [...s.attachedMaterials, m] }
+    }),
+
+  detachMaterial: (id) =>
+    set((s) => ({ attachedMaterials: s.attachedMaterials.filter(a => a.id !== id) })),
+
+  clearAttached: () => set({ attachedMaterials: [] }),
 }))

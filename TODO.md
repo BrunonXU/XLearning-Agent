@@ -58,6 +58,7 @@
 
 ### ⚪ P4 — 面试加分 & 锦上添花
 
+- [ ] 多模态材料理解：PDF 图片用 VL 模型提取描述文本存入 ChromaDB，小红书图片同理，使 LLM 能"看到"图片内容
 - [ ] LangGraph 版 Orchestrator UI 切换开关接通后端
 - [ ] RAG Eval 评测（设计评测集 + 评测脚本 + 报告）
 - [ ] 引用来源标注（RAGEngine 返回 source metadata → Tutor 携带 citations → UI 渲染引用折叠区）

@@ -392,7 +392,7 @@ class BatchAddRequest(BaseModel):
 
 @router.post("/materials/from-search", status_code=201)
 async def add_materials_from_search(body: BatchAddRequest):
-    """将搜索结果批量加入学习材料（持久化到数据库）"""
+    """将搜索结果批量加入学习材料（持久化到数据库 + ChromaDB）"""
     added = []
     for item in body.items:
         try:
@@ -407,6 +407,9 @@ async def add_materials_from_search(body: BatchAddRequest):
                 "extraData": item.extraData or {},
             })
             added.append(item.id)
+
+            # 写入 ChromaDB，使 Studio 全局 RAG 可检索
+            _ingest_search_material_to_chroma(item)
         except (ValueError, RuntimeError) as e:
             logger.warning("Skip duplicate or failed material %s: %s", item.id, e)
     # Sync source count for each unique plan
@@ -414,3 +417,44 @@ async def add_materials_from_search(body: BatchAddRequest):
     for pid in plan_ids:
         _sync_source_count(pid)
     return {"added": added, "count": len(added)}
+
+
+def _ingest_search_material_to_chroma(item: SearchMaterialItem) -> None:
+    """将搜索来源材料的 extra_data 内容写入 ChromaDB。"""
+    extra = item.extraData or {}
+    if not extra:
+        return
+
+    # 拼接有效内容
+    parts = []
+    content_text = extra.get("contentText") or ""
+    if content_text:
+        parts.append(content_text)
+    summary = extra.get("contentSummary") or ""
+    if summary:
+        parts.append(summary)
+    key_points = extra.get("keyPoints") or []
+    if key_points:
+        parts.append("\n".join(key_points))
+    key_facts = extra.get("keyFacts") or []
+    if key_facts:
+        parts.append("；".join(key_facts))
+
+    content = "\n\n".join(parts).strip()
+    if not content:
+        return
+
+    try:
+        from src.rag import RAGEngine
+        rag = RAGEngine(collection_name=f"plan_{item.planId}")
+        rag.add_document(
+            content=content,
+            metadata={
+                "material_id": item.id,
+                "source": item.name,
+                "plan_id": item.planId,
+            },
+        )
+        logger.info(f"[upload] ChromaDB ingest OK for search material {item.id}")
+    except Exception as e:
+        logger.warning(f"[upload] ChromaDB ingest failed for {item.id}: {e}")

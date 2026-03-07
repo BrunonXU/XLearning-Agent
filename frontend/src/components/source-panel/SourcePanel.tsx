@@ -253,6 +253,13 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
               <li key={m.id} onClick={() => handleSelect(m.id)}
                 onMouseEnter={(e) => setHoveredFile({ id: m.id, rect: e.currentTarget.getBoundingClientRect() })}
                 onMouseLeave={() => setHoveredFile(null)}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('application/material', JSON.stringify({
+                    id: m.id, name: m.name, platform: m.type,
+                  }))
+                }}
                 className="group relative flex items-center justify-center w-full focus:outline-none">
 
                 <div className={`w-12 h-12 flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 ${selectedId === m.id ? 'bg-[#F2DFD3]' : 'hover:bg-[#EFECE5]'

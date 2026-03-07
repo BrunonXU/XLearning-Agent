@@ -48,6 +48,8 @@ export interface ChatMessage {
   content: string;
   sources?: CitationSource[];
   createdAt: string;
+  /** 用户消息附加的材料 ID 列表 */
+  attachedMaterialIds?: string[];
 }
 
 export interface CitationSource {

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-
+import { createPortal } from 'react-dom'
 interface ModalProps {
   open: boolean
   onClose: () => void
@@ -25,9 +25,9 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
       role="dialog"
       aria-modal="true"
     >
@@ -53,7 +53,8 @@ export const Modal: React.FC<ModalProps> = ({
         )}
         <div className="px-6 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

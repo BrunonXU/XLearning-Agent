@@ -29,6 +29,7 @@ class ChatRequest(BaseModel):
     planId: str
     message: str
     history: Optional[List[dict]] = None
+    materialIds: Optional[List[str]] = None
 
 
 def _truncate_history(history: List[dict]) -> List[dict]:
@@ -36,11 +37,143 @@ def _truncate_history(history: List[dict]) -> List[dict]:
     return history[-MAX_HISTORY:] if history else []
 
 
-async def _generate_sse(plan_id: str, message: str, history: List[dict]):
+def _build_material_context(plan_id: str, material_ids: List[str], user_message: str = "") -> str:
+    """从数据库获取指定材料的内容，组装为可注入 prompt 的上下文文本。
+
+    搜索来源材料（bilibili/xiaohongshu/other 等）：从 extra_data 提取内容。
+    上传文件材料（pdf/markdown/text）：通过 RAGEngine 按 material_id 过滤检索。
+    总上下文限制 8000 字符，按材料顺序截断。
+    """
+    MAX_MATERIALS = 5
+    MAX_CONTENT_TEXT = 2000
+    MAX_TOTAL_CHARS = 8000
+
+    if not material_ids:
+        return ""
+
+    # 获取所有材料基本信息
+    all_materials = database.get_materials(plan_id) if plan_id else []
+    mat_map = {m["id"]: m for m in all_materials}
+
+    # 区分搜索来源 vs 上传文件
+    UPLOAD_TYPES = {"pdf", "markdown", "text"}
+    search_ids = []
+    upload_ids = []
+    for mid in material_ids[:MAX_MATERIALS]:
+        mat = mat_map.get(mid, {})
+        mat_type = mat.get("type", "")
+        if mat_type in UPLOAD_TYPES:
+            upload_ids.append(mid)
+        else:
+            search_ids.append(mid)
+
+    parts = []
+
+    # 1) 搜索来源材料：从 extra_data 提取
+    for mid in search_ids:
+        mat = mat_map.get(mid, {})
+        title = mat.get("name") or mid[:8]
+        extra = mat.get("extraData") or {}
+
+        if not extra:
+            extra = database.get_material_extra_data(mid) or {}
+
+        sections = [f"【材料：{title}】"]
+
+        content_text = extra.get("contentText") or ""
+        if content_text:
+            if len(content_text) > MAX_CONTENT_TEXT:
+                content_text = content_text[:MAX_CONTENT_TEXT] + "…（已截断）"
+            sections.append(f"正文：{content_text}")
+
+        summary = extra.get("contentSummary") or ""
+        if summary:
+            sections.append(f"摘要：{summary}")
+
+        key_points = extra.get("keyPoints") or []
+        if key_points:
+            sections.append("核心观点：\n" + "\n".join(f"- {p}" for p in key_points))
+
+        key_facts = extra.get("keyFacts") or []
+        if key_facts:
+            sections.append("关键事实：" + "；".join(key_facts))
+
+        comment_summary = extra.get("commentSummary") or ""
+        if comment_summary:
+            sections.append(f"评论总结：{comment_summary}")
+
+        desc = extra.get("description") or ""
+        if desc and not content_text and not summary:
+            sections.append(f"描述：{desc}")
+
+        if len(sections) > 1:
+            parts.append("\n".join(sections))
+
+    # 2) 上传文件材料：通过 RAG 按需检索
+    if upload_ids and user_message:
+        try:
+            from src.rag import RAGEngine
+            rag = RAGEngine(collection_name=f"plan_{plan_id}")
+            k = min(3 * len(upload_ids), 10)
+            results = rag.retrieve(
+                query=user_message,
+                k=k,
+                filter={"material_id": {"$in": upload_ids}},
+            )
+            logger.info(f"[chat] RAG retrieve for upload materials: ids={upload_ids}, results={len(results)}")
+            # 按 material_id 分组
+            grouped: dict = {}
+            for r in results:
+                r_mid = r.metadata.get("material_id", "")
+                grouped.setdefault(r_mid, []).append(r)
+
+            for mid in upload_ids:
+                mat = mat_map.get(mid, {})
+                title = mat.get("name") or mid[:8]
+                chunks = grouped.get(mid, [])
+                if not chunks:
+                    # Fallback：RAG 无结果时注入元信息，让 LLM 至少知道有这个文件
+                    parts.append(f"【材料：{title}】\n（该文件内容暂未索引到相关片段，请用户提供更具体的问题）")
+                    continue
+                sections = [f"【材料：{title}】"]
+                for i, chunk in enumerate(chunks[:3], 1):
+                    sections.append(f"[相关片段 {i}]\n{chunk.content}")
+                parts.append("\n\n".join(sections))
+        except Exception as e:
+            logger.warning(f"[chat] RAG retrieve failed for upload materials: {e}")
+            # Fallback：RAG 异常时也注入元信息
+            for mid in upload_ids:
+                mat = mat_map.get(mid, {})
+                title = mat.get("name") or mid[:8]
+                parts.append(f"【材料：{title}】\n（文件内容检索失败，请稍后重试）")
+
+    if not parts:
+        return ""
+
+    # 3) 总长度控制：按顺序截断，优先保留前面材料
+    header = "[用户附加的参考材料]\n\n"
+    separator = "\n\n---\n\n"
+    remaining = MAX_TOTAL_CHARS - len(header)
+    kept = []
+    for i, part in enumerate(parts):
+        cost = len(part) + (len(separator) if kept else 0)
+        if cost <= remaining:
+            kept.append(part)
+            remaining -= cost
+        else:
+            break
+
+    if not kept:
+        return ""
+
+    return header + separator.join(kept)
+
+
+async def _generate_sse(plan_id: str, message: str, history: List[dict], material_ids: Optional[List[str]] = None):
     """SSE 生成器：逐 chunk 推送 TutorAgent 流式输出"""
     from backend.session_context import get_session
 
-    logger.info(f"[chat] ▶ plan={plan_id!r} message={message[:80]!r} history_len={len(history)}")
+    logger.info(f"[chat] ▶ plan={plan_id!r} message={message[:80]!r} history_len={len(history)} materials={material_ids}")
 
     # Persist user message BEFORE starting the stream
     user_msg = {
@@ -58,6 +191,12 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict]):
 
     ctx = get_session(plan_id)
     truncated = _truncate_history(history)
+
+    # 获取附加材料的内容，注入到对话上下文
+    material_context = ""
+    if material_ids:
+        material_context = _build_material_context(plan_id, material_ids, user_message=message)
+        logger.info(f"[chat] material_context built: ids={material_ids}, len={len(material_context)}, empty={not material_context}")
 
     # Detect Studio tool trigger from chat message
     from backend.intent_detector import detect_studio_trigger
@@ -84,6 +223,8 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict]):
         for chunk in ctx.tutor.stream_response(
             user_input=message,
             history=truncated,
+            use_rag=False,
+            material_context=material_context if material_context else None,
         ):
             if chunk:
                 chunk_count += 1
@@ -180,7 +321,7 @@ def _generate_suggested_questions(user_message: str) -> List[str]:
 @router.post("/chat")
 async def chat(body: ChatRequest):
     return StreamingResponse(
-        _generate_sse(body.planId, body.message, body.history or []),
+        _generate_sse(body.planId, body.message, body.history or [], body.materialIds),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

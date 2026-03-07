@@ -32,6 +32,7 @@ export function useSSE(planId: string) {
     setStreaming,
     setSuggestedQuestions,
     getHistory,
+    attachedMaterials,
   } = useChatStore()
 
   const cancel = useCallback(() => {
@@ -40,12 +41,16 @@ export function useSSE(planId: string) {
   }, [setStreaming])
 
   const sendMessage = useCallback(async (text: string) => {
+    // 快照当前附加材料（Sticky：不清空）
+    const materialIds = attachedMaterials.map(m => m.id)
+
     // 添加用户消息
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
       content: text,
       createdAt: new Date().toISOString(),
+      attachedMaterialIds: materialIds.length > 0 ? materialIds : undefined,
     }
     addMessage(userMsg)
     setStreaming(true)
@@ -65,6 +70,7 @@ export function useSSE(planId: string) {
             planId,
             message: text,
             history: history.map(m => ({ role: m.role, content: m.content })),
+            materialIds: materialIds.length > 0 ? materialIds : undefined,
           }),
           signal: abortRef.current.signal,
         })
@@ -140,7 +146,7 @@ export function useSSE(planId: string) {
     }
 
     await _attempt()
-  }, [planId, addMessage, appendChunk, finalizeStream, setStreaming, setSuggestedQuestions, getHistory])
+  }, [planId, addMessage, appendChunk, finalizeStream, setStreaming, setSuggestedQuestions, getHistory, attachedMaterials])
 
   /** 降级：普通 HTTP POST，不流式 */
   const _fallbackHttp = async (text: string, history: ChatMessage[]) => {

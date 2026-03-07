@@ -16,6 +16,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
     return (
       <div className="flex justify-end mt-2 mb-4">
         <div className="bg-[#F1F3F4] text-[#202124] rounded-2xl rounded-tr-sm px-5 py-3.5 max-w-[75%] shadow-sm border border-[#E5E5E5]/50">
+          {message.attachedMaterialIds && message.attachedMaterialIds.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {message.attachedMaterialIds.map(id => (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#F2DFD3]/80 text-[#D97757] text-[11px] font-medium">
+                  📎 {id.slice(0, 8)}…
+                </span>
+              ))}
+            </div>
+          )}
           <p className="text-[15px] leading-relaxed whitespace-pre-wrap font-medium">{message.content}</p>
         </div>
       </div>

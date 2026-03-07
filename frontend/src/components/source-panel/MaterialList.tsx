@@ -61,6 +61,12 @@ export const MaterialList: React.FC<MaterialListProps> = ({
                 dragItem.current = index
                 setDraggedId(m.id)
                 e.dataTransfer.effectAllowed = 'move'
+                // 设置材料数据供聊天区域接收
+                e.dataTransfer.setData('application/material', JSON.stringify({
+                  id: m.id,
+                  name: m.name,
+                  platform: m.type,
+                }))
               }}
               onDragEnter={() => {
                 dragOverItem.current = index

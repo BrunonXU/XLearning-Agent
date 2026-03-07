@@ -461,17 +461,50 @@ class TutorAgent(BaseAgent):
         user_input: str,
         history: Optional[List[Dict[str, str]]] = None,
         use_rag: bool = True,
+        material_context: Optional[str] = None,
     ) -> Generator[str, None, None]:
         """
         流式输出回复
+
+        Args:
+            material_context: 用户附加材料的文本上下文（可选）
         """
         prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=use_rag)
+
+        # 注入用户附加的材料上下文（放在 prompt 末尾、紧贴用户问题，确保 LLM 优先关注）
+        if material_context:
+            instruction = (
+                "\n\n---\n\n"
+                "[重要：用户已将以下学习材料附加到本次对话中。"
+                "请忽略之前对话中讨论的其他文件，仅基于以下附加材料回答当前问题。"
+                "当用户提到'这个文件''这个材料''这是什么'等指代词时，就是在指这些附加材料。]\n\n"
+            )
+            prompt = prompt + instruction + material_context
+
         self._emit_event("progress", self.name, "Generating tutor response (streaming)...")
 
         messages = [
             Message(role="system", content=self.system_prompt),
             Message(role="user", content=prompt),
         ]
+
+        # DEBUG: 输出完整 prompt 到文件，方便排查
+        try:
+            import os
+            os.makedirs("data", exist_ok=True)
+            with open("data/last_llm_call.txt", "w", encoding="utf-8") as f:
+                f.write("=== SYSTEM PROMPT ===\n")
+                f.write(self.system_prompt)
+                f.write("\n\n=== USER PROMPT ===\n")
+                f.write(prompt)
+                f.write(f"\n\n=== META ===\n")
+                f.write(f"use_rag={use_rag}\n")
+                f.write(f"has_material_context={material_context is not None and len(material_context or '') > 0}\n")
+                f.write(f"material_context_len={len(material_context or '')}\n")
+                f.write(f"prompt_len={len(prompt)}\n")
+                f.write(f"doc_meta={self.doc_meta}\n")
+        except Exception:
+            pass
 
         try:
             for chunk in self.llm.stream(messages):

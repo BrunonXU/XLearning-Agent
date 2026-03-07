@@ -30,6 +30,13 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
   const savedLeftRef = useRef(20)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Refs for direct DOM manipulation to prevent lagging re-renders during drag
+  const leftPanelRef = useRef<HTMLDivElement>(null)
+  const rightPanelRef = useRef<HTMLDivElement>(null)
+  const dragLeftTempRef = useRef(leftPct)
+  const dragRightTempRef = useRef(rightPct)
+  const rafIdRef = useRef<number | null>(null)
+
   // 进入/退出阅读模式时自动调整左侧宽度
   useEffect(() => {
     if (isReading && !prevReadingRef.current) {
@@ -47,16 +54,42 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     e.preventDefault()
     const startX = e.clientX
     const startLeft = leftPct
+    dragLeftTempRef.current = startLeft
     const minL = isReading ? MIN_LEFT_READING : MIN_LEFT
     const maxL = isReading ? MAX_LEFT_READING : MAX_LEFT_NORMAL
+
+    // Disable CSS transitions during drag for instant feedback and hint GPU
+    if (leftPanelRef.current) {
+      leftPanelRef.current.style.transition = 'none'
+      leftPanelRef.current.style.willChange = 'width'
+    }
+
     const onMove = (ev: MouseEvent) => {
       if (!containerRef.current) return
       const totalW = containerRef.current.offsetWidth
       const delta = ((ev.clientX - startX) / totalW) * 100
       const newLeft = Math.min(maxL, Math.max(minL, startLeft + delta))
-      if (100 - newLeft - rightPct >= MIN_CENTER) setLeftPct(newLeft)
+      if (100 - newLeft - rightPct >= MIN_CENTER) {
+        dragLeftTempRef.current = newLeft
+
+        // Use requestAnimationFrame to sync with display refresh rate and avoid layout thrashing
+        if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current)
+        rafIdRef.current = requestAnimationFrame(() => {
+          if (leftPanelRef.current && !isLeftCollapsed) {
+            leftPanelRef.current.style.width = `calc(${newLeft}% - 8px)`
+          }
+        })
+      }
     }
     const onUp = () => {
+      // Re-enable CSS transitions and save state
+      if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current)
+      if (leftPanelRef.current) {
+        leftPanelRef.current.style.transition = ''
+        leftPanelRef.current.style.willChange = 'auto'
+      }
+      setLeftPct(dragLeftTempRef.current)
+
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
       document.body.style.cursor = ''
@@ -72,14 +105,40 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     e.preventDefault()
     const startX = e.clientX
     const startRight = rightPct
+    dragRightTempRef.current = startRight
+
+    // Disable CSS transitions during drag for instant feedback
+    if (rightPanelRef.current) {
+      rightPanelRef.current.style.transition = 'none'
+      rightPanelRef.current.style.willChange = 'width'
+    }
+
     const onMove = (ev: MouseEvent) => {
       if (!containerRef.current) return
       const totalW = containerRef.current.offsetWidth
       const delta = ((startX - ev.clientX) / totalW) * 100
       const newRight = Math.max(MIN_RIGHT, startRight + delta)
-      if (100 - leftPct - newRight >= MIN_CENTER) setRightPct(newRight)
+      if (100 - leftPct - newRight >= MIN_CENTER) {
+        dragRightTempRef.current = newRight
+
+        // Use requestAnimationFrame to sync with display refresh rate and avoid layout thrashing
+        if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current)
+        rafIdRef.current = requestAnimationFrame(() => {
+          if (rightPanelRef.current && !isRightCollapsed) {
+            rightPanelRef.current.style.width = `calc(${newRight}% - 8px)`
+          }
+        })
+      }
     }
     const onUp = () => {
+      // Re-enable CSS transitions and save state
+      if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current)
+      if (rightPanelRef.current) {
+        rightPanelRef.current.style.transition = ''
+        rightPanelRef.current.style.willChange = 'auto'
+      }
+      setRightPct(dragRightTempRef.current)
+
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
       document.body.style.cursor = ''
@@ -109,6 +168,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
       >
         {/* 左侧面板 */}
         <div
+          ref={leftPanelRef}
           className={`flex flex-col overflow-hidden bg-white dark:bg-dark-surface flex-shrink-0 rounded-2xl shadow-soft ${isLeftCollapsed ? 'transition-all duration-300' : ''}`}
           style={{ width: isLeftCollapsed ? '72px' : `calc(${leftPct}% - 8px)` }}
         >
@@ -156,6 +216,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
 
         {/* 右侧 Studio 面板 */}
         <div
+          ref={rightPanelRef}
           className={`flex flex-col overflow-hidden bg-white dark:bg-dark-surface flex-shrink-0 rounded-2xl shadow-soft ${isRightCollapsed ? 'transition-all duration-300' : ''}`}
           style={{ width: isRightCollapsed ? '72px' : `calc(${rightPct}% - 8px)` }}
         >
