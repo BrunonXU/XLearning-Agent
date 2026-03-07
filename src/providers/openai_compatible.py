@@ -17,6 +17,7 @@ import os
 from typing import List, Generator, Optional
 
 from openai import OpenAI
+from langsmith.wrappers import wrap_openai
 
 from .base import LLMProvider, Message, LLMResponse
 
@@ -71,10 +72,10 @@ class OpenAICompatibleProvider(LLMProvider):
                 f"Please set it in .env or pass api_key parameter."
             )
 
-        self._client = OpenAI(
+        self._client = wrap_openai(OpenAI(
             api_key=self._api_key,
             base_url=self._base_url,
-        )
+        ))
 
     @property
     def model_name(self) -> str:

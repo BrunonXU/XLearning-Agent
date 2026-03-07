@@ -65,7 +65,10 @@ class TutorAgent(BaseAgent):
 4. 检查学生是否理解
 5. 鼓励提出更多问题
 
-如果有相关的学习资料作为参考，请基于这些资料回答，并在适当时引用来源。"""
+如果有相关的学习资料作为参考，请基于这些资料回答，并在适当时引用来源。
+
+**重要风格要求（严格执行）**：
+绝对不要在回复中使用任何 emoji 表情符号（如 😊、🤖、📝 等）。请始终坚守专业、严谨、简洁的学术解答风格。不要有任何卖萌或多余的情感符号。"""
 
     @property
     def system_prompt(self) -> str:
@@ -275,6 +278,7 @@ class TutorAgent(BaseAgent):
         user_input: str,
         history: Optional[List[Dict[str, str]]] = None,
         use_rag: bool = True,
+        episodic_summary: Optional[str] = None,
     ) -> str:
         """构建 Free 模式 Prompt，供普通调用和流式调用复用。
         
@@ -367,9 +371,16 @@ class TutorAgent(BaseAgent):
         if progress_context:
             prompt_parts.append(progress_context)
 
+        # 注入 Episodic Memory 摘要（对话历史之前，帮助 LLM 理解学习者背景）
+        if episodic_summary:
+            prompt_parts.append(
+                f"[对话记忆摘要：以下是之前对话的压缩摘要，帮助你理解学习者的背景]\n{episodic_summary}"
+            )
+
         # 首次对话标记：让 LLM 知道是否需要先询问学习目标
         # 但如果有文档上下文（用户上传了 PDF），直接基于文档回答，不问学习目标
-        if not history_text and not (self.doc_meta and context):
+        # 有 episodic_summary 说明之前有过对话（只是被清空了），不算首次
+        if not history_text and not episodic_summary and not (self.doc_meta and context):
             prompt_parts.append("[系统提示：这是学生的第一条消息，请按照首次对话规则回复，先了解学习目的和水平。]")
 
         # 文档上下文提示：让 LLM 明确知道用户已上传文档，RAG 内容就是文档内容
@@ -468,14 +479,16 @@ class TutorAgent(BaseAgent):
         history: Optional[List[Dict[str, str]]] = None,
         use_rag: bool = True,
         material_context: Optional[str] = None,
+        episodic_summary: Optional[str] = None,
     ) -> Generator[str, None, None]:
         """
         流式输出回复
 
         Args:
             material_context: 用户附加材料的文本上下文（可选）
+            episodic_summary: Episodic Memory 摘要文本（可选）
         """
-        prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=use_rag)
+        prompt = self._build_free_mode_prompt(user_input, history=history, use_rag=use_rag, episodic_summary=episodic_summary)
 
         # 注入用户附加的材料上下文（放在 prompt 末尾、紧贴用户问题，确保 LLM 优先关注）
         if material_context:

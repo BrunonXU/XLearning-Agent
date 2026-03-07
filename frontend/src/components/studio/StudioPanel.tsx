@@ -208,7 +208,20 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
       {/* 标题栏 */}
       <div className={`flex items-center h-[68px] px-8 flex-shrink-0 transition-all border-b border-[#E5E5E5] ${isCollapsed ? 'justify-center px-0 flex-col gap-0 h-[68px]' : 'justify-between'}`}>
         {!isCollapsed && (
-          <span className="text-base font-semibold text-[#202124] dark:text-dark-text mt-2">Studio</span>
+          <span className="text-base font-semibold text-[#202124] dark:text-dark-text mt-2 flex items-center gap-2">
+            Studio
+            <button
+              onClick={() => { setPendingToolType(null); setShowProfileModal(true) }}
+              className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${learnerProfile ? 'bg-[#F2DFD3] text-[#D97757] hover:bg-[#EACFC0]' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`}
+              aria-label="学习者画像"
+              title={learnerProfile ? '编辑学习者画像' : '设置学习者画像'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill={learnerProfile ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </button>
+          </span>
         )}
         <div className={`flex items-center gap-2 ${isCollapsed ? 'flex-col' : ''}`}>
           {!isCollapsed && (
@@ -256,19 +269,16 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({ planId = '', isCollaps
             {/* 工具卡片网格 */}
             <div className="px-6 py-4">
               {learnerProfile && (
-                <div className="mb-4 flex items-center justify-between px-1">
+                <div className="mb-4 flex items-center px-1">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="text-sm font-medium text-[#202124] truncate">
                       {learnerProfile.goal ? learnerProfile.goal : '学习者画像'}
                     </span>
                     <span className="text-xs text-[#5F6368] truncate">
                       {learnerProfile.level ? `· ${learnerProfile.level}` : ''}
+                      {learnerProfile.duration ? ` · ${learnerProfile.duration}` : ''}
                     </span>
                   </div>
-                  <button onClick={() => { setPendingToolType(null); setShowProfileModal(true) }}
-                    className="text-xs text-[#D97757] font-medium px-2 py-1 hover:bg-[#F2DFD3] rounded-md transition-colors flex-shrink-0">
-                    编辑画像
-                  </button>
                 </div>
               )}
               <div className="grid grid-cols-3 gap-3">

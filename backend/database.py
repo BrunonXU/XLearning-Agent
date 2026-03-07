@@ -170,6 +170,22 @@ def init_db() -> None:
             logger.info("Added viewed_at column to materials")
         except sqlite3.OperationalError:
             pass  # column already exists
+
+        # Episodic Memory: conversation_summaries 表
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS conversation_summaries (
+                id               TEXT PRIMARY KEY,
+                plan_id          TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+                summary_text     TEXT NOT NULL,
+                message_count    INTEGER NOT NULL,
+                start_message_id TEXT NOT NULL,
+                end_message_id   TEXT NOT NULL,
+                created_at       TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_conversation_summaries_plan_id
+                ON conversation_summaries(plan_id);
+        """)
+
         logger.info("Database initialized successfully at %s", _DB_PATH)
     except sqlite3.Error as e:
         logger.error("Database initialization failed: %s", e)
@@ -287,6 +303,20 @@ def get_messages(plan_id: str) -> List[dict]:
         d["sources"] = json.loads(d.get("sources") or "[]")
         results.append(_to_camel(d))
     return results
+
+def delete_messages(plan_id: str) -> int:
+    """删除指定 plan 的所有消息，返回删除行数"""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM messages WHERE plan_id = ?", (plan_id,)
+            )
+        return cur.rowcount
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
 
 
 # ---------------------------------------------------------------------------
@@ -786,3 +816,158 @@ def upsert_setting(key: str, value: str) -> None:
         (key, value, value),
     )
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Conversation Summaries (Episodic Memory)
+# ---------------------------------------------------------------------------
+
+def insert_conversation_summary(summary: dict) -> dict:
+    """插入对话摘要记录"""
+    row = _to_snake(summary)
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                """INSERT INTO conversation_summaries
+                   (id, plan_id, summary_text, message_count, start_message_id, end_message_id, created_at)
+                   VALUES (:id, :plan_id, :summary_text, :message_count, :start_message_id, :end_message_id, :created_at)""",
+                row,
+            )
+        return _to_camel(row)
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
+def get_conversation_summaries(plan_id: str) -> List[dict]:
+    """获取该 plan 的所有摘要，按 created_at ASC（最早在前）"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM conversation_summaries WHERE plan_id = ? ORDER BY created_at ASC",
+        (plan_id,),
+    ).fetchall()
+    return [_to_camel(dict(r)) for r in rows]
+
+
+def get_latest_conversation_summary(plan_id: str) -> Optional[dict]:
+    """获取该 plan 的最新一条摘要"""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM conversation_summaries WHERE plan_id = ? ORDER BY created_at DESC LIMIT 1",
+        (plan_id,),
+    ).fetchone()
+    return _to_camel(dict(row)) if row else None
+
+
+def delete_conversation_summary(summary_id: str) -> bool:
+    """删除指定摘要（合并时用）"""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM conversation_summaries WHERE id = ?", (summary_id,)
+            )
+        return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
+def update_conversation_summary_text(
+    summary_id: str,
+    merged_text: str,
+    new_start_message_id: str = "",
+    new_message_count: int = 0,
+) -> bool:
+    """更新摘要文本（合并摘要链时用）"""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                """UPDATE conversation_summaries
+                   SET summary_text = ?, start_message_id = ?, message_count = ?
+                   WHERE id = ?""",
+                (merged_text, new_start_message_id, new_message_count, summary_id),
+            )
+        return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logger.error("Database error: %s", e)
+        raise RuntimeError(f"Database error: {e}")
+
+
+def count_messages_after(plan_id: str, after_message_id: Optional[str] = None) -> int:
+    """统计 plan 中在 after_message_id 之后的消息数。
+    after_message_id 为 None 时返回该 plan 的总消息数。
+    用 rowid 排序（插入顺序）。
+    如果 after_message_id 对应的消息已被删除，回退到统计全部消息。
+    """
+    conn = get_connection()
+    if after_message_id is None:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE plan_id = ?", (plan_id,)
+        ).fetchone()
+    else:
+        # 先检查 after_message_id 是否还存在
+        exists = conn.execute(
+            "SELECT 1 FROM messages WHERE id = ?", (after_message_id,)
+        ).fetchone()
+        if not exists:
+            # 消息已被删除（清空对话后的边界情况），回退到统计全部
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM messages WHERE plan_id = ?", (plan_id,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """SELECT COUNT(*) as cnt FROM messages
+                   WHERE plan_id = ?
+                     AND rowid > (SELECT rowid FROM messages WHERE id = ?)""",
+                (plan_id, after_message_id),
+            ).fetchone()
+    return row["cnt"] if row else 0
+
+
+def get_messages_range(
+    plan_id: str,
+    after_message_id: Optional[str] = None,
+    exclude_last_n: int = 12,
+) -> List[dict]:
+    """获取 after_message_id 之后、排除最后 exclude_last_n 条的消息列表。
+    这些就是待压缩的消息。用 rowid 排序。
+    如果 after_message_id 对应的消息已被删除，回退到取全部消息。
+    """
+    conn = get_connection()
+
+    # 检查 after_message_id 是否还存在，不存在则回退
+    effective_after_id = after_message_id
+    if effective_after_id is not None:
+        exists = conn.execute(
+            "SELECT 1 FROM messages WHERE id = ?", (effective_after_id,)
+        ).fetchone()
+        if not exists:
+            effective_after_id = None
+
+    if effective_after_id is None:
+        # 取该 plan 全部消息，排除最后 N 条
+        rows = conn.execute(
+            """SELECT * FROM messages
+               WHERE plan_id = ?
+               ORDER BY rowid ASC""",
+            (plan_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT * FROM messages
+               WHERE plan_id = ?
+                 AND rowid > (SELECT rowid FROM messages WHERE id = ?)
+               ORDER BY rowid ASC""",
+            (plan_id, effective_after_id),
+        ).fetchall()
+
+    # 排除最后 exclude_last_n 条（Working Memory 窗口）
+    if exclude_last_n > 0 and len(rows) > exclude_last_n:
+        rows = rows[:-exclude_last_n]
+    elif exclude_last_n > 0:
+        return []  # 消息数不够，没有可压缩的
+
+    return [_to_camel(dict(r)) for r in rows]

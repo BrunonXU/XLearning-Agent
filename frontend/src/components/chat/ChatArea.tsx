@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react'
+import React, { useRef, useEffect, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
@@ -12,21 +12,34 @@ interface ChatAreaProps {
 
 export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const isAutoScrollEnabled = useRef(true)
   const [dragOver, setDragOver] = useState(false)
   const {
     messages,
     isStreaming,
     streamingContent,
     attachMaterial,
+    clearMessages,
   } = useChatStore()
   const { materials } = useSourceStore()
   const hasMaterials = materials.length > 0
   const { sendMessage, cancel } = useSSE(planId)
 
-  // 新消息/流式内容变化时滚动到底部
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+    // 如果距离底部只有轻微像素差距，则认为触底。考虑到可能有的设备缩放导致小数，放宽到 60px
+    isAutoScrollEnabled.current = scrollHeight - Math.ceil(scrollTop) - clientHeight <= 60
+  }, [])
+
+  // 新消息/流式内容变化时，仅在用户处于最底部时才跟随滚动
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, streamingContent])
+    if (isAutoScrollEnabled.current) {
+      // 正在流式输出时用 'auto'（瞬间同步避免动画冲突卡死），不输出时用 'smooth'
+      const behavior = isStreaming ? 'auto' : 'smooth'
+      messagesEndRef.current?.scrollIntoView({ behavior })
+    }
+  }, [messages.length, streamingContent, isStreaming])
 
   const handleDragOver = (e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/material')) {
@@ -69,8 +82,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
       )}
 
       {/* 顶部标题栏 */}
-      <div className="h-[68px] flex items-center px-8 flex-shrink-0 border-b border-[#E5E5E5] bg-white z-10">
+      <div className="h-[68px] flex items-center justify-between px-8 flex-shrink-0 border-b border-[#E5E5E5] bg-white z-10">
         <span className="text-base font-semibold text-[#1A1A18]">对话</span>
+        {messages.length > 0 && !isStreaming && (
+          <button
+            onClick={() => {
+              if (window.confirm('确定清空对话？历史记忆会保留，AI 不会失忆。')) {
+                clearMessages(planId)
+              }
+            }}
+            className="text-xs text-gray-400 hover:text-[#D97757] transition-colors px-2 py-1 rounded-md hover:bg-[#FFF7ED]"
+            title="清空对话消息（记忆会保留）"
+          >
+            清空对话
+          </button>
+        )}
       </div>
 
       {/* 消息和输入框的共同滚动容器（统一背景色消除断层） */}
@@ -79,17 +105,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ planId = '' }) => {
         <div className="h-4 flex-shrink-0" />
 
         {/* 消息列表（只有这里滚动） */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col items-center">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto scrollbar-thin flex flex-col items-center"
+        >
           <div className="w-full max-w-3xl px-8 pt-4 pb-6 flex-1 flex flex-col">
             <MessageList messages={messages} isStreaming={isStreaming && !streamingContent} />
 
             {/* 流式输出气泡 */}
             {isStreaming && streamingContent && (
-              <div className="flex flex-col gap-2 max-w-[85%] mt-6">
-                <div className="bg-[#F8F9FA] rounded-2xl rounded-tl-sm px-6 py-5 shadow-sm">
-                  <div className="prose max-w-none text-[#202124] prose-p:my-1.5 prose-headings:my-2.5 prose-li:my-0.5 prose-code:bg-[#F1F3F4] prose-code:px-1 prose-code:rounded">
+              <div className="flex flex-col gap-2 max-w-[95%] mb-6 mt-6">
+                <div className="text-[#202124] w-fit max-w-[90%] pb-2">
+                  <div className="prose max-w-none text-[#1A1A18] leading-[1.6] prose-p:my-1.5 prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-bold prose-headings:text-black prose-strong:font-extrabold prose-strong:text-black prose-strong:tracking-tight prose-hr:my-3 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-code:bg-gray-100 prose-code:text-[#D97757] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none prose-pre:bg-[#1E1E1E] prose-pre:text-gray-100 prose-pre:rounded-xl text-[16px] tracking-normal [&_pre_code]:bg-transparent [&_pre_code]:text-gray-100 [&_pre_code]:p-0">
                     <ReactMarkdown>{streamingContent}</ReactMarkdown>
-                    <span className="inline-block w-0.5 h-[1em] bg-[#D97757] animate-pulse ml-0.5 align-middle" />
+                    <span className="inline-block w-0.5 h-[1em] bg-[#D97757] animate-pulse ml-1 align-middle" />
                   </div>
                 </div>
               </div>

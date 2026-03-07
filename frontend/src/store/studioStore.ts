@@ -84,7 +84,7 @@ export const useStudioStore = create<StudioStore>()((set) => ({
         notesRes.ok ? notesRes.json() : [],
       ])
       const profileData = profileRes.ok ? await profileRes.json() : null
-      const hasProfile = profileData && (profileData.goal || profileData.level || profileData.duration)
+      const hasProfile = profileData && (profileData.goal || profileData.level || profileData.duration || profileData.background || profileData.dailyHours)
       set({
         allDays: progress,
         currentDay: findCurrentDay(progress),

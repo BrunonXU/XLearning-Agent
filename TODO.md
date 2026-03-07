@@ -1,70 +1,70 @@
 # XLearning-Agent TODO
 
-> **最后更新**：2026-03-07
-> **当前状态**：React + FastAPI 前端已完成，旧 Streamlit UI 已清理
+> **最后更新**：2026-03-08
+> **当前状态**：React + FastAPI 前端已完成，正在做 Agent Memory 系统设计
 
 ---
 
-## 已完成 ✅
+## 🔥 当前进行中
 
-- React + FastAPI 前端（NotebookLM 风格）12 个模块全部完成
-- 旧 Streamlit UI、POC 实验脚本、调试文件已清理
-- 40/40 前端属性测试通过
-- Git 已提交并推送到远程
+- [ ] **Agent Memory 系统设计**（Episodic Memory，spec 在 `.kiro/specs/episodic-memory/`）
+  - 对话摘要压缩、归档机制
+  - 多轮对话上下文理解依赖此系统
 
-## 当前 TODO
+## 🔴 BUG / 待优化
 
-### 🔴 BUG — 必须立即修复
+- [ ] 搜索并发问题：部分平台没有被搜索到（并发调度待优化）
+- [ ] 搜索过程中的 UIUX 体验不够好，需要重新设计
 
-- [x] 刷新页面后搜索资源全部丢失（搜索历史 + 已添加的搜索材料都没了）
-- [] 搜索并发问题：部分平台没有被搜索到（并发调度 bug）
-- [] 搜索 hover 预览问题：搜索结果 vs 搜索历史结果的数据结构不统一导致 hover 异常
+## 🔴 P0 — 核心功能
 
-### 🟠 P0 — 核心功能（影响可用性）
-
-- [ ] 聊天 Agent Orchestrator：对话中可执行命令（如触发搜索、生成内容等）
-- [ ] 聊天 Agent 感知材料变化：用户添加材料后 agent 能识别并利用新材料信息
+- [ ] RAG Eval 评测（10+ 条 query 人工抽检 + hit@k 脚本，面试必备数据）
+- [ ] Studio Prompt 策略继续优化（生成质量、各工具类型的 prompt 调优）
 - [ ] 将 chat.py 接入 Orchestrator（当前直接调 TutorAgent，绕过了意图识别/进度注入/搜索路由）
-- [ ] 对话中触发 Studio 生成（如"帮我创建学习规划"→ 意图识别 → 生成内容 → SSE 推送到 Studio）
 - [ ] 清理 Orchestrator 中的 Streamlit 残留代码（`st.session_state` 引用）
-- [ ] Studio 各功能生成策略优化（prompt 策略、生成质量）
 - [ ] 端到端功能验收（参照 `docs/acceptance_test.md`）
-  - [ ] PDF 上传 → 解析 → 生成学习计划
-  - [ ] GitHub URL → 识别并分析仓库
-  - [ ] 多轮对话上下文理解
-  - [ ] Studio 工具卡片生成内容（学习指南、闪卡、测验等）
-  - [ ] 笔记 CRUD 完整流程
-  - [ ] 资源搜索 → 加入材料 → 对话引用
+  - [x] PDF 上传 → 解析 → 生成学习计划
+  - [ ] GitHub URL → 识别并分析仓库（从未测试过）
+  - [x] Studio 工具卡片生成内容（学习指南、闪卡、测验等）
+  - [x] 笔记 CRUD 完整流程
+  - [x] 资源搜索 → 加入材料 → 对话引用
 
-### 🟡 P1 — 搜索 & 资源体验
+## 🟡 P1 — 未来功能
 
-- [ ] 添加知乎作为搜索源
-- [x] 搜索中断按钮（用户可手动取消正在进行的搜索）
-- [x] 材料查看器：打开小红书/其他网页资源时应与 PDF/MD 一样的缩放比例和宽度，UIUX 统一
+- [ ] 添加知乎作为搜索源（ZhihuSearcher 代码已有，需接入前端平台选择）
+- [ ] 对话中触发 Studio 生成（意图识别 → 生成内容 → SSE 推送到 Studio）
 
-### 🔵 P2 — 设置 & 可观测性
+## 🔵 P2 — 可观测性
 
-- [ ] 设置页：用户配置 API Key（LLM 和 Tokenizer/Embedding 的 API 如何统一？用户是否需要配两个？）
-- [ ] LangChain/LangSmith 调用追踪可视化
-- [ ] LangSmith 全链路追踪配置与验证（需要 API Key）
+- [ ] LangSmith 调用追踪可视化（前端展示）
 
-### 🟣 P3 — UI 打磨
+## 🟣 P3 — UI 打磨
 
-- [ ] 深色模式视觉微调（部分组件可能有颜色不协调）
+- [ ] 深色模式视觉微调
 - [ ] 确保 1280px+ 桌面端体验流畅
-- [ ] 错误提示文案优化（用户友好的中文提示）
-- [ ] 加载状态优化（骨架屏已有，检查是否所有异步操作都覆盖）
+- [ ] 错误提示文案优化
+- [ ] 加载状态优化
 - [ ] CSS 动画优化
 
-### ⚪ P4 — 面试加分 & 锦上添花
+## ⚪ P4 — 面试加分 & 锦上添花
 
-- [ ] 多模态材料理解：PDF 图片用 VL 模型提取描述文本存入 ChromaDB，小红书图片同理，使 LLM 能"看到"图片内容
-- [ ] LangGraph 版 Orchestrator UI 切换开关接通后端
-- [ ] RAG Eval 评测（设计评测集 + 评测脚本 + 报告）
-- [ ] 引用来源标注（RAGEngine 返回 source metadata → Tutor 携带 citations → UI 渲染引用折叠区）
+- [ ] 多模态材料理解（PDF 图片 + 小红书图片用 VL 模型提取描述文本）
+- [ ] LangGraph 版 Orchestrator UI 切换开关
+- [ ] RAG Eval 评测（评测集 + 脚本 + 报告）
+- [ ] 引用来源标注（RAGEngine → citations → UI 渲染）
 - [ ] 3 分钟演示脚本与计时演练
 - [ ] 演示视频录制
 - [ ] 更新 README 中的开发计划表和架构图
+
+---
+
+## 已知技术债务
+
+- `tutor.py` 的 `stream_response` 有 debug dump 到 `data/last_llm_call.txt`
+- `prompt_builder.py` 中 `_build_study_guide_instruction` 重复定义了两次
+- Orchestrator 未接入 chat.py，且有 Streamlit 残留代码
+- `SearchHistoryCard.tsx` 有 BOM 编码问题
+- `add_materials_from_search` 端点在 `upload.py` 里（不是 `resource.py`）
 
 ---
 
@@ -87,3 +87,31 @@
 # 后端: uvicorn backend.main:app --port 8000
 # 前端: cd frontend && npm run dev
 ```
+
+---
+
+## ✅ 已完成（按优先级归档）
+
+### 核心功能
+- [x] React + FastAPI 前端（NotebookLM 风格）12 个模块全部完成
+- [x] SQLite 统一持久化（8 张表 + 级联删除 + WAL 模式）
+- [x] 多源搜索聚合（小红书/B站/YouTube/GitHub/Google，两阶段漏斗筛选）
+- [x] 搜索策略优化（SlotAllocator 配额分配、关键词翻译、三批并发调度）
+- [x] 材料感知聊天（拖拽材料到输入框，显式注入模式）
+- [x] PromptBuilder 7 种工具类型基础实现（RAG 策略 + 进度注入 + 学习者画像）
+- [x] Provider 热切换 + 设置页 API Key 配置
+
+### UIUX & 体验
+- [x] 搜索中断按钮
+- [x] 材料查看器 UIUX 统一（网页资源与 PDF/MD 一致）
+- [x] 搜索 hover 预览数据结构统一
+- [x] 搜索历史持久化（刷新不丢失）
+
+### 可观测性 & 工程化
+- [x] LangSmith 全链路追踪（@traceable + 环境变量配置）
+- [x] 40/40 前端属性测试通过
+- [x] Kiro steering 文件体系（4 个领域 steering + project-conventions）
+- [x] 技术文档更新（技术规格书 v4.0）
+
+### 清理
+- [x] 旧 Streamlit UI、POC 实验脚本、调试文件已清理

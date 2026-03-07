@@ -8,6 +8,7 @@ const PLATFORM_ICONS: Record<PlatformType, string> = {
   google: '🌐',
   github: '🔗',
   xiaohongshu: '📕',
+  zhihu: '💡',
   other: '🌐',
 }
 

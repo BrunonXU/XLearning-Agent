@@ -1,6 +1,6 @@
 // 全局 TypeScript 类型定义
 
-export type PlatformType = 'bilibili' | 'youtube' | 'google' | 'github' | 'xiaohongshu' | 'other';
+export type PlatformType = 'bilibili' | 'youtube' | 'google' | 'github' | 'xiaohongshu' | 'zhihu' | 'other';
 
 export interface Material {
   id: string;

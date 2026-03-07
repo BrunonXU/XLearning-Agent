@@ -1,5 +1,7 @@
 """规划 CRUD 端点及子资源端点"""
 
+import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -7,7 +9,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend import database
-from backend.session_context import clear_session
+from backend.session_context import clear_session, get_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["plans"])
 
@@ -102,6 +106,28 @@ async def delete_plan(plan_id: str):
 @router.get("/plans/{plan_id}/messages")
 async def get_plan_messages(plan_id: str):
     return database.get_messages(plan_id)
+
+
+@router.delete("/plans/{plan_id}/messages", status_code=204)
+async def clear_plan_messages(plan_id: str):
+    """清空对话消息。先强制摘要再删消息，都在后台执行，不阻塞响应。
+
+    前端乐观更新（立即清屏），后端异步处理：摘要 → 删消息。
+    """
+
+    async def _bg_summarize_then_delete():
+        try:
+            ctx = get_session(plan_id)
+            from src.agents.episodic_memory import EpisodicMemory
+            em = EpisodicMemory(llm_provider=ctx.tutor.llm)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, em.force_summarize_all, plan_id)
+        except Exception as e:
+            logger.warning(f"[plans] 清空对话前强制摘要失败: {e}")
+        # 无论摘要成功与否，都删消息
+        database.delete_messages(plan_id)
+
+    asyncio.create_task(_bg_summarize_then_delete())
 
 
 # ---------------------------------------------------------------------------

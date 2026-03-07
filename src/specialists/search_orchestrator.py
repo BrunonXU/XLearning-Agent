@@ -29,6 +29,7 @@ from src.specialists.quality_scorer import QualityScorer
 from src.specialists.resource_collector import ResourceCollector
 from src.specialists.search_cache import SearchCache
 from src.specialists.bilibili_searcher import BiliBiliSearcher
+from src.specialists.zhihu_searcher import ZhihuSearcher
 from src.specialists.slot_allocator import SlotAllocator
 from src.specialists.xhs_searcher import XhsSearcher
 
@@ -85,6 +86,7 @@ class SearchOrchestrator:
         self._quality_scorer = QualityScorer(llm_provider=llm_provider)
         self._bilibili_searcher = BiliBiliSearcher()
         self._xhs_searcher = XhsSearcher()
+        self._zhihu_searcher = ZhihuSearcher()
         # 搜索体验重设计：两阶段漏斗筛选 + 流水线执行
         self._engagement_ranker = EngagementRanker()
         self._quality_assessor = QualityAssessor(llm_provider=llm_provider)
@@ -614,6 +616,8 @@ class SearchOrchestrator:
             if config.use_api_search:
                 if config.name == "bilibili":
                     return await self._bilibili_searcher.search(query, limit)
+                elif config.name == "zhihu":
+                    return await self._zhihu_searcher.search(query, limit)
                 else:
                     logger.warning(f"平台 {config.name} 配置了 use_api_search 但无对应搜索器")
                     return []

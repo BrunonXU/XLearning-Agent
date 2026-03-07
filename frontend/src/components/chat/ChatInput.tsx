@@ -63,9 +63,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     <div className="px-8 pb-8 pt-4 bg-transparent flex-shrink-0 w-full flex justify-center">
       <div className="w-full max-w-3xl">
         <div
-          className={`relative flex flex-col rounded-3xl border focus-within:border-[#D97757]/50 focus-within:ring-4 focus-within:ring-[#D97757]/10 bg-[#F9F9F9] px-5 py-2.5 transition-all duration-200 shadow-sm ${
-            dragOver ? 'border-[#D97757] ring-4 ring-[#D97757]/20 bg-[#FFF8F5]' : 'border-[#E5E5E5]'
-          }`}
+          className={`relative flex flex-col rounded-3xl border focus-within:border-[#D97757]/50 focus-within:ring-4 focus-within:ring-[#D97757]/10 bg-[#F9F9F9] px-5 py-2.5 transition-all duration-200 shadow-sm ${dragOver ? 'border-[#D97757] ring-4 ring-[#D97757]/20 bg-[#FFF8F5]' : 'border-[#E5E5E5]'
+            }`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -107,7 +106,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onChange={handleInput}
               onKeyDown={handleKeyDown}
               placeholder={attachedMaterials.length > 0 ? '基于附加材料提问...' : placeholder}
-              disabled={disabled}
               rows={1}
               className="flex-1 resize-none bg-transparent text-base text-[#202124] placeholder:text-[#9AA0A6] outline-none min-h-[44px] max-h-[200px] py-2"
               aria-label="输入消息"

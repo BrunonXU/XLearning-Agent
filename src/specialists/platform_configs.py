@@ -179,6 +179,22 @@ _bilibili_config = PlatformConfig(
     focused_search_count=60,
 )
 
+_zhihu_config = PlatformConfig(
+    name="zhihu",
+    search_url_template="https://www.zhihu.com/search?type=content&q={query}",
+    result_selector="",
+    title_selector="",
+    link_selector="",
+    description_selector="",
+    resource_type="article",
+    detail_selectors=DetailSelectors(),
+    use_api_search=True,
+    platform_category="article",
+    scoring_weights={"likes": 2, "comments": 3},
+    default_search_count=10,
+    focused_search_count=40,
+)
+
 
 PLATFORM_CONFIGS: Dict[str, PlatformConfig] = {
     "xiaohongshu": _xiaohongshu_config,
@@ -188,4 +204,5 @@ PLATFORM_CONFIGS: Dict[str, PlatformConfig] = {
     "google": _google_config,
     "wechat": _wechat_config,
     "bilibili": _bilibili_config,
+    "zhihu": _zhihu_config,
 }

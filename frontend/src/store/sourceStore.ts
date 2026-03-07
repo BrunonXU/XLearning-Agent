@@ -30,6 +30,7 @@ const DEFAULT_PLATFORM_STATUS: Record<PlatformType, PlatformStatus> = {
   youtube: 'idle',
   github: 'idle',
   xiaohongshu: 'idle',
+  zhihu: 'idle',
   google: 'idle',
   other: 'idle',
 }

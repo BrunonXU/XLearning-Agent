@@ -18,8 +18,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend import database
-from langsmith import traceable
-import langsmith as ls
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -221,17 +219,25 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict], materia
     full_response = ""
     src_payload = []
     t_start = time.perf_counter()
-    _ls_rt = ls.trace(
-        "chat.stream_response", "chain",
-        inputs={"message": message, "history_len": len(history), "material_ids": material_ids or []},
-    )
-    _ls_rt.__enter__()
+
+    # Episodic Memory：检查是否需要触发后台摘要，获取当前可用摘要
+    episodic_summary = None
+    try:
+        from src.agents.episodic_memory import EpisodicMemory
+        em = EpisodicMemory(llm_provider=ctx.tutor.llm)
+        if em.should_trigger(plan_id):
+            asyncio.create_task(em.trigger_background_summary(plan_id))
+        episodic_summary = em.get_injectable_summary(plan_id)
+    except Exception as e:
+        logger.warning(f"[chat] Episodic Memory 初始化失败: {e}")
+
     try:
         for chunk in ctx.tutor.stream_response(
             user_input=message,
             history=truncated,
             use_rag=False,
             material_context=material_context if material_context else None,
+            episodic_summary=episodic_summary,
         ):
             if chunk:
                 chunk_count += 1
@@ -268,13 +274,6 @@ async def _generate_sse(plan_id: str, message: str, history: List[dict], materia
     finally:
         t_end = time.perf_counter()
         duration_ms = round((t_end - t_start) * 1000, 1)
-
-        # 结束 LangSmith trace
-        try:
-            _ls_rt.end(outputs={"response": full_response[:2000], "chunks": chunk_count})
-            _ls_rt.__exit__(None, None, None)
-        except Exception:
-            pass
 
         # Persist assistant message after stream completes
         if full_response:

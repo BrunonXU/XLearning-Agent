@@ -24,7 +24,7 @@ interface ChatStore {
   finalizeStream: (sources?: ChatMessage['sources']) => void
   setStreaming: (v: boolean) => void
   setSuggestedQuestions: (qs: string[]) => void
-  clearMessages: () => void
+  clearMessages: (planId?: string) => void
   getHistory: () => ChatMessage[]
   /** 附加材料到输入框 */
   attachMaterial: (m: AttachedMaterial) => void
@@ -83,7 +83,16 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
 
   setStreaming: (v) => set({ isStreaming: v }),
   setSuggestedQuestions: (qs) => set({ suggestedQuestions: qs }),
-  clearMessages: () => set({ messages: [], streamingContent: '', suggestedQuestions: [] }),
+  clearMessages: (planId) => {
+    // 乐观更新：立即清空前端状态
+    set({ messages: [], streamingContent: '', suggestedQuestions: [] })
+    // 通知后端清空消息（触发强制摘要 + 删除 DB 记录）
+    if (planId) {
+      fetch(`/api/plans/${planId}/messages`, { method: 'DELETE' }).catch((e) =>
+        console.warn('[chatStore] 清空消息 API 调用失败:', e)
+      )
+    }
+  },
 
   getHistory: () => {
     const { messages } = get()

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["search"])
 
-VALID_PLATFORMS = {"bilibili", "youtube", "google", "github", "xiaohongshu"}
+VALID_PLATFORMS = {"bilibili", "youtube", "google", "github", "xiaohongshu", "zhihu"}
 
 
 class SearchRequest(BaseModel):

@@ -63,3 +63,4 @@ httpx==0.28.1
 # 本地 Embedding（已移除，改用 DashScope API）
 # ============================================
 # sentence-transformers>=2.2.0  # 依赖 torch ~1.5GB，暂不需要
+PyExecJS>=1.5.1

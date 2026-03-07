@@ -20,6 +20,7 @@ const PLATFORM_LABELS: Record<PlatformType, { icon: string; name: string }> = {
   google: { icon: '🌐', name: 'Google' },
   github: { icon: '🔗', name: 'GitHub' },
   xiaohongshu: { icon: '📕', name: '小红书' },
+  zhihu: { icon: '💡', name: '知乎' },
   other: { icon: '🌐', name: '其他' },
 }
 

@@ -18,12 +18,13 @@ import { Button } from '../ui/Button'
 import { useSearchStore } from '../../store/searchStore'
 import type { SearchResult, PlatformType, SearchStage } from '../../types'
 
-const PLATFORMS: { key: PlatformType; label: string; icon: string }[] = [
+const PLATFORMS: { key: PlatformType; label: string; icon: string; disabled?: boolean; tooltip?: string }[] = [
   { key: 'bilibili', label: 'B站', icon: '📺' },
   { key: 'youtube', label: 'YouTube', icon: '🎬' },
   { key: 'google', label: 'Google', icon: '🌐' },
   { key: 'github', label: 'GitHub', icon: '🔗' },
   { key: 'xiaohongshu', label: '小红书', icon: '📕' },
+  { key: 'zhihu', label: '知乎', icon: '💡', disabled: true, tooltip: '需要登录，暂未开放' },
 ]
 
 /** 根据 SSE stage 字段生成中文状态文案 */
@@ -128,7 +129,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
     const placeholderId = `search-${Date.now()}`
     store.setActiveSearch({
       query: query.trim(),
-      platforms: platforms ?? PLATFORMS.map(p => p.key),
+      platforms: platforms ?? PLATFORMS.filter(p => !p.disabled).map(p => p.key),
       stage: 'searching',
       stageMessage: '正在搜索...',
       results: [],
@@ -140,7 +141,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
     store.addEntry(planId, {
       id: placeholderId,
       query: query.trim(),
-      platforms: platforms ?? PLATFORMS.map(p => p.key),
+      platforms: platforms ?? PLATFORMS.filter(p => !p.disabled).map(p => p.key),
       results: [],
       resultCount: 0,
       searchedAt: new Date().toISOString(),
@@ -312,16 +313,21 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ planId = '', onAddToMa
         {PLATFORMS.map(p => (
           <button
             key={p.key}
-            onClick={() => togglePlatform(p.key)}
+            onClick={() => !p.disabled && togglePlatform(p.key)}
+            disabled={p.disabled}
             aria-pressed={selectedPlatforms.has(p.key)}
+            title={p.tooltip}
             className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-sm font-medium transition-all duration-150 ${
-              selectedPlatforms.has(p.key)
+              p.disabled
+                ? 'bg-[#F1F3F4] text-[#B0B5BA] border border-transparent cursor-not-allowed opacity-60'
+                : selectedPlatforms.has(p.key)
                 ? 'bg-[#F2DFD3] text-[#D97757] border border-[#D97757]'
                 : 'bg-[#F1F3F4] text-[#5F6368] border border-transparent hover:border-[#DADCE0]'
             }`}
           >
             <span>{p.icon}</span>
             <span>{p.label}</span>
+            {p.disabled && <span className="text-[10px] ml-0.5">🔒</span>}
           </button>
         ))}
       </div>
