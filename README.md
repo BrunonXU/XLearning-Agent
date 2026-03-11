@@ -1,180 +1,343 @@
-# 🎓 XLearning-Agent
+<p align="center">
+  <!-- TODO: 替换为项目 Logo -->
+  <img src="docs/assets/logo.png" alt="LearningIN28 Logo" width="120" />
+</p>
 
-> **AI 智能学习助手** - 基于 LangChain + RAG + Multi-Agent 架构的个性化学习平台
+<h1 align="center">LearningIN28</h1>
 
-[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
-[![LangChain](https://img.shields.io/badge/LangChain-0.2+-green.svg)](https://langchain.com)
-[![LangSmith](https://img.shields.io/badge/LangSmith-Enabled-purple.svg)](https://smith.langchain.com)
+<p align="center">
+  <strong>Master anything in 28 days.</strong><br/>
+  An AI-powered learning assistant that turns any topic into a structured daily plan — with smart resource discovery, adaptive tutoring, and daily check-ins to keep you on track.
+</p>
+
+<p align="center">
+  <!-- TODO: 替换为实际 GitHub 地址 -->
+  <a href="#"><img src="https://img.shields.io/github/stars/your-username/LearningIN28?style=social" alt="GitHub Stars" /></a>
+  <a href="#"><img src="https://img.shields.io/github/license/your-username/LearningIN28" alt="License" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/react-18-61dafb.svg" alt="React" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" /></a>
+</p>
+
+<p align="center">
+  <strong>English</strong> | <a href="README_CN.md">中文</a>
+</p>
+
+<p align="center">
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-user-journey">User Journey</a> •
+  <a href="#-features">Features</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-roadmap">Roadmap</a> •
+  <a href="#-contributing">Contributing</a>
+</p>
 
 ---
 
-## ✨ 功能特性
+<!-- TODO: 替换为产品全貌截图或 GIF -->
+<p align="center">
+  <img src="docs/assets/hero-screenshot.png" alt="LearningIN28 三栏布局全貌" width="900" />
+</p>
 
-- 📋 **智能规划** - Planner Agent 自动分析 GitHub 仓库/PDF 论文，生成包含真实学习资源的个性化学习路径
-- 🔍 **多源资源聚合** - ResourceSearcher 从 Bilibili、YouTube、Google、GitHub 等平台搜索真实学习资源
-- 🎓 **互动教学** - Tutor Agent 支持自由对话、资源推荐、动态学习进度追踪
-- 📈 **动态学习路径** - 会话级进度记忆，根据学习反馈动态调整学习大纲
-- 🔍 **RAG 知识检索** - ChromaDB 向量存储，基于用户上传资料的个性化知识问答
-- 📊 **全链路追踪** - LangSmith 集成，Token 统计 & 调用链可视化
-- 🔄 **双模式运行** - 单独模式精细控制，协调模式一键完成全流程
-- 📝 **可选测验** - Quiz 测验作为可选功能，不强制用户走测验流程
+## 💡 Why LearningIN28?
+
+Most AI learning tools stop at "chat with your docs." LearningIN28 goes further — it gives your learning a **deadline, a structure, and a daily rhythm**.
+
+| Pain Point | How LearningIN28 Solves It |
+|---|---|
+| 🗓️ "I'll learn it someday" syndrome | **3–28 day bounded plans** — pick a deadline, AI generates a daily roadmap |
+| 📚 Scattered resources everywhere | **6-platform search aggregation** — Xiaohongshu, Bilibili, YouTube, GitHub, Google, Zhihu, filtered by a two-stage quality funnel |
+| 🤖 Generic AI responses | **Material-aware chat** — drag your PDFs into the conversation, AI answers grounded in YOUR materials |
+| 🧠 AI forgets what you discussed | **Episodic Memory** — AI remembers your confusion points across sessions, even after clearing chat |
+| 📊 No sense of progress | **Daily check-ins + AI summaries** — complete today's tasks, get encouragement and cross-day knowledge connections |
+
+
+## 🎬 User Journey
+
+> Meet **小明**, a junior developer preparing for frontend interviews. He gives himself **14 days** to master React.
+
+### Day 0 — Setup (2 minutes)
+
+小明 creates a new learning plan, sets his profile: "14-day cycle, 2 hours/day, intermediate level, goal: job interview prep." He uploads the React official docs PDF and searches for top-rated React tutorials across Bilibili and YouTube.
+
+<!-- TODO: 替换为创建计划 + 设置画像的截图 -->
+<p align="center">
+  <img src="docs/assets/journey-01-setup.png" alt="创建学习计划" width="700" />
+</p>
+
+### Day 1 — First Learning Session
+
+AI generates a 14-day learning plan tailored to his profile. Day 1: JSX fundamentals. 小明 reads the materials, chats with AI when confused about JSX expressions vs statements. After completing the day's tasks, he clicks "Day Summary" — AI generates a personalized recap with encouragement:
+
+> *"Day 1 done — you've nailed JSX syntax. Tomorrow's Component composition will build directly on what you learned today."*
+
+<!-- TODO: 替换为 Day 1 学习界面截图（三栏布局：材料 | 聊天 | Studio） -->
+<p align="center">
+  <img src="docs/assets/journey-02-day1.png" alt="Day 1 学习界面" width="700" />
+</p>
+
+### Day 7 — Mid-cycle Review
+
+Halfway through. 小明 generates a progress report — AI analyzes his completion rate, identifies weak spots (he struggled with `useEffect` cleanup on Day 5), and suggests focused review. He generates flashcards — AI automatically weights more cards toward his confusion points from chat history.
+
+<!-- TODO: 替换为进度报告 + 闪卡截图 -->
+<p align="center">
+  <img src="docs/assets/journey-03-midreview.png" alt="中期回顾" width="700" />
+</p>
+
+### Day 14 — Completion
+
+小明 finishes all 14 days. He generates a mind map to visualize the full knowledge structure, takes a comprehensive quiz where AI targets his historically weak areas, and exports his study guide as interview prep material.
+
+<!-- TODO: 替换为完成状态截图（思维导图 + 测验） -->
+<p align="center">
+  <img src="docs/assets/journey-04-complete.png" alt="学习完成" width="700" />
+</p>
 
 ---
 
-## 🏗️ 系统架构
+## ✨ Features
+
+### 📋 Structured Learning Plans
+AI generates day-by-day learning plans (3–28 days) based on your profile, materials, and available time. Short cycles (3–7 days) focus on core concepts; longer cycles (15–28 days) include review days and practice sessions.
+
+### 🔍 Multi-Source Search Aggregation
+Search across 6 platforms simultaneously with a **two-stage quality funnel**:
+1. **Engagement ranking** — filter by likes, comments, and relevance
+2. **LLM quality assessment** — AI scores and summarizes each result
+
+Supported platforms: Xiaohongshu · Bilibili · YouTube · GitHub · Google · Zhihu
+
+<!-- TODO: 替换为搜索界面截图 -->
+<p align="center">
+  <img src="docs/assets/feature-search.png" alt="多源搜索" width="700" />
+</p>
+
+### 💬 Material-Aware Chat
+Drag materials into the chat input — AI answers grounded in YOUR documents, not generic knowledge. Studio tools use global RAG for comprehensive content generation.
+
+### 🧠 Episodic Memory
+AI compresses long conversations into episodic summaries. Clear your chat, start fresh — but AI still remembers what confused you last time. This powers smarter flashcards, quizzes, and study guides.
+
+### 🎯 7 Studio Tools
+
+| Tool | What It Does |
+|------|-------------|
+| 📖 Study Guide | Strategic learning roadmap with knowledge structure |
+| 📅 Learning Plan | Day-by-day task breakdown (strict JSON, rendered as timeline) |
+| 🃏 Flashcards | Q&A cards weighted toward your confusion points |
+| 📝 Quiz | Multi-format tests targeting your weak areas |
+| 🗺️ Mind Map | Knowledge structure visualization (markmap.js) |
+| 📊 Progress Report | Data-driven analysis of your learning journey |
+| 📓 Day Summary | Daily recap with AI encouragement and cross-day knowledge connections |
+
+All tools are **context-aware** — they adapt based on your chat history, episodic memory, learner profile, and current progress.
+
+### 🔌 Multi-Provider Support
+Swap LLM providers without changing code. One `OpenAICompatibleProvider` class covers all:
+
+| Provider | Default Model |
+|----------|--------------|
+| DeepSeek | deepseek-chat (V3, 64K context) |
+| OpenAI | gpt-4o-mini |
+| Zhipu (GLM) | glm-4-flash |
+| Moonshot | moonshot-v1-8k |
+
+
+---
+
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    展示层 (Streamlit)                        │
-│              Plan (学习路径) | Study (学习+资源)             │
-├─────────────────────────────────────────────────────────────┤
-│                    可观测层 (LangSmith)                      │
-├─────────────────────────────────────────────────────────────┤
-│                    协调层 (Orchestrator)                     │
-│              意图识别 · Agent 调度 · 进度上下文               │
-├─────────────────────────────────────────────────────────────┤
-│   Planner Agent   │   Tutor Agent   │   Validator Agent    │
-│   (学习路径生成)   │  (互动教学+RAG) │   (可选测验/报告)    │
-├─────────────────────────────────────────────────────────────┤
-│ ResourceSearcher │ RepoAnalyzer │ PDFAnalyzer │ QuizMaker  │
-│ (多源资源搜索)   │ (GitHub分析) │ (PDF解析)   │ (可选测验) │
-├─────────────────────────────────────────────────────────────┤
-│                    RAG 层 (ChromaDB)                        │
-├─────────────────────────────────────────────────────────────┤
-│                    Provider 层 (Tongyi/Qwen)                │
-└─────────────────────────────────────────────────────────────┘
+│  Frontend: React + TypeScript + Zustand + TailwindCSS       │
+│  Three-panel layout: Resources | Chat | Studio              │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ REST API + SSE (streaming)
+┌──────────────────────────┴──────────────────────────────────┐
+│  Backend API: FastAPI                                        │
+│  Routes: plans / chat / studio / search / resource / upload  │
+├──────────────────────────────────────────────────────────────┤
+│  Core Logic (src/)                                           │
+│  ├── agents/       TutorAgent + Episodic Memory              │
+│  ├── providers/    OpenAI-compatible abstraction (4 vendors)  │
+│  ├── specialists/  Search module (6 platforms + 2-stage funnel)│
+│  └── rag/          ChromaDB vector store                      │
+├──────────────────────────────────────────────────────────────┤
+│  Persistence                                                  │
+│  ├── SQLite (WAL mode) — 8 tables, cascade delete             │
+│  └── ChromaDB — text-embedding-v2 (DashScope)                 │
+├──────────────────────────────────────────────────────────────┤
+│  Observability: LangSmith (@traceable)                        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+<!-- TODO: 替换为更精美的架构图（draw.io / Excalidraw 导出） -->
+
+### Search Pipeline Deep Dive
+
+The search module is the most complex part of the system:
+
+```
+User query + platform selection
+  → SearchOrchestrator (3-batch concurrent execution)
+    → Batch 1: API platforms (Bilibili, Zhihu) — parallel
+    → Batch 2: Authenticated platforms (Xiaohongshu) — serial
+    → Batch 3: Browser platforms (YouTube, GitHub, Google) — Playwright headless
+  → EngagementRanker (interaction-based initial filter)
+  → PipelineExecutor (detail extraction → LLM quality assessment)
+  → SlotAllocator (proportional top-k selection)
+  → SSE progress streaming to frontend
+```
+
+### Prompt Strategy
+
+Every Studio tool uses **dynamic instruction assembly** instead of static templates:
+
+```python
+# Python-side conditional branching — LLM receives clear, unambiguous instructions
+def _build_study_guide_instruction(self, all_days, rag_context, profile_text, 
+                                     chat_history, current_day_number, episodic_summary):
+    parts = [BASE_INSTRUCTION]
+    
+    if rag_context:
+        parts.append("Materials are your backbone — structure the guide around them.")
+    else:
+        parts.append("No materials uploaded — generate a general guide.")
+    
+    if chat_history and episodic_summary:
+        parts.append("Use both recent chat and long-term memory as context clues.")
+    elif episodic_summary:
+        parts.append("No recent chat, but use episodic memory for continuity.")
+    # ... more branches for profile, progress, scene detection
+    
+    return "\n".join(parts)
 ```
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 1. 克隆项目
+### Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- At least one LLM API key (DeepSeek recommended)
+- DashScope API key (for text-embedding-v2)
+
+### 1. Clone & Install
 
 ```bash
-git clone https://github.com/your-username/XLearning-Agent.git
-cd XLearning-Agent
-```
+git clone https://github.com/your-username/LearningIN28.git
+cd LearningIN28
 
-### 2. 创建虚拟环境
-
-```bash
+# Backend
 python -m venv venv
-# Windows
-.\venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
-```
-
-### 3. 安装依赖
-
-```bash
+# Windows: .\venv\Scripts\activate
+# macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
+
+# Frontend
+cd frontend
+npm install
+cd ..
 ```
 
-### 4. 配置环境变量
+### 2. Configure
 
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，填入你的 API Keys
+# Edit .env — fill in your API keys:
+#   DEEPSEEK_API_KEY=sk-xxx
+#   DASHSCOPE_API_KEY=sk-xxx
+#   LANGSMITH_API_KEY=lsv2-xxx (optional, for tracing)
 ```
 
-### 5. 运行应用
+### 3. Run
+
+```powershell
+# Windows (one-click)
+.\start_dev.ps1
+
+# Or manually:
+# Terminal 1 — Backend
+uvicorn backend.main:app --port 8000 --reload
+
+# Terminal 2 — Frontend
+cd frontend && npm run dev
+```
+
+Open `http://localhost:5173` and create your first learning plan.
+
+---
+
+## 🗺️ Roadmap
+
+- [x] NotebookLM-style three-panel UI
+- [x] Multi-source search aggregation (6 platforms)
+- [x] Two-stage quality funnel (engagement + LLM)
+- [x] Material-aware chat (explicit attachment mode)
+- [x] SQLite unified persistence (8 tables + WAL)
+- [x] Episodic Memory (working memory + episodic summary)
+- [x] PromptBuilder with dynamic instruction assembly
+- [x] Multi-provider support (4 LLM vendors)
+- [x] LangSmith full-chain tracing
+- [ ] Dynamic prompt optimization for all 7 Studio tools
+- [ ] Progress ring UI component (Day X/N visualization)
+- [ ] LangGraph-based chat orchestrator
+- [ ] RAG evaluation pipeline (hit@k metrics)
+- [ ] Multi-modal material understanding (PDF images + VL models)
+- [ ] Demo video & polished onboarding
+
+---
+
+## 🧪 Testing
 
 ```bash
-streamlit run app.py
+# Backend (Pytest + Hypothesis property-based testing)
+pytest tests/ -v
+
+# Frontend (Vitest)
+cd frontend && npx vitest --run
 ```
 
-> **Windows 免激活 venv 启动**：若 PowerShell 未激活虚拟环境，`streamlit` 可能报 `CommandNotFoundException`。使用以下任一方式即可：
->
-> - 推荐：`venv\Scripts\python.exe -m streamlit run app.py`
-> - 一键脚本：`.\scripts\run_ui.ps1`（需在项目根目录执行）
->
-> 启动前可运行 `python check_startup.py` 做自检。
+The project uses **property-based testing** (Hypothesis) for core modules like search slot allocation, episodic memory compression, and resource aggregation.
 
 ---
 
-## 📁 项目结构
+## 🤝 Contributing
 
-```
-XLearning-Agent/
-├── docs/                          # 文档
-│   ├── ultimate_technical_specification.md
-│   ├── ui_mockups.md              # UI 线框图
-│   └── acceptance_test.md         # 验收测试清单
-├── src/                           # 源代码
-│   ├── providers/                 # LLM Provider 抽象层
-│   │   ├── base.py               # 抽象基类
-│   │   ├── factory.py            # 工厂模式
-│   │   ├── tongyi.py             # Tongyi/Qwen 实现
-│   │   └── local_embedding.py    # 本地 Embedding
-│   ├── rag/                       # RAG 知识层
-│   │   └── engine.py             # RAG 引擎 (ChromaDB)
-│   ├── agents/                    # Agent 层
-│   │   ├── base.py               # Agent 基类
-│   │   ├── planner.py            # 规划 Agent（学习路径+资源）
-│   │   ├── tutor.py              # 教学 Agent（对话+RAG+进度）
-│   │   ├── validator.py          # 验证 Agent（可选测验/报告）
-│   │   ├── orchestrator.py       # 协调器（意图识别+调度）
-│   │   └── orchestrator_langgraph.py  # LangGraph 版协调器
-│   ├── specialists/               # 专业处理层
-│   │   ├── resource_searcher.py  # 🆕 多源资源搜索
-│   │   ├── repo_analyzer.py      # GitHub 仓库分析
-│   │   ├── pdf_analyzer.py       # PDF 解析
-│   │   └── quiz_maker.py         # Quiz 生成（可选）
-│   ├── observability/             # 可观测层
-│   │   └── tracing.py            # LangSmith 追踪
-│   ├── core/                      # 核心模块
-│   │   ├── config.py             # 配置管理
-│   │   ├── file_manager.py       # 文件管理
-│   │   └── models.py             # 数据模型
-│   └── ui/                        # UI 组件
-│       ├── layout.py             # 页面布局（Home/Workspace）
-│       ├── renderer.py           # 聊天渲染器
-│       ├── logic.py              # UI 业务逻辑
-│       ├── state.py              # 会话状态管理
-│       ├── styles.py             # CSS 样式
-│       └── components.py         # 通用组件
-├── tests/                         # 测试
-├── data/                          # 数据目录（ChromaDB + Sessions）
-├── requirements.txt               # 依赖
-├── app.py                         # 应用入口
-└── README.md
-```
+Contributions are welcome! Whether it's a bug report, feature request, or pull request.
 
----
+<!-- TODO: 创建 CONTRIBUTING.md 后取消注释 -->
+<!-- See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. -->
 
-## 🎯 开发计划
+### Development Notes
 
-| 阶段 | 日期 | 任务 | 状态 |
-|------|------|------|------|
-| 基础搭建 | Day 1-3 | 项目初始化、Provider、RAG | ✅ 完成 |
-| 核心 Agent | Day 4-5 | UI 重构、Orchestrator 增强、P0 后端修复 | ✅ 完成 |
-| 功能完善 | Day 6-8 | P1/P2 全部、Bug Fixes、UI 3-Tab 重构 | ✅ 完成 |
-| UI 打磨 | Day 9 | UI 布局 Spec Bugfix（5 项修复） | ✅ 完成 |
-| 方向转型 | Day 10+ | 🆕 资源聚合 + 动态学习路径 | 🚧 进行中 |
-| 收尾 | — | 端到端验收、演示视频、简历更新 | ⏳ 待开始 |
-
-### 🆕 当前重点：资源聚合 + 动态学习路径
-
-> Quiz/Report 流程降级为可选，核心价值转向「多源资源聚合 + 动态学习路径」
-
-- 新增 `ResourceSearcher` 专家模块，聚合 Bilibili/YouTube/Google/GitHub 资源
-- Planner 生成学习路径时自动搜索真实学习资源
-- 会话级学习进度追踪（ProgressTracker）
-- UI 主流程简化为 Plan | Study 两步
+- Backend changes (Python / `.env`) require server restart
+- Frontend changes hot-reload via Vite HMR
+- Database: SQLite with snake_case fields, API returns camelCase (auto-converted)
+- Embedding model is **fixed** (text-embedding-v2) — changing it breaks ChromaDB vector compatibility
 
 ---
 
 ## 📜 License
 
-MIT License
+[MIT](LICENSE)
 
 ---
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-- [Yixiang-Wu-LearningAgent](https://github.com/Lorry-LY/LearningAgent) - 三层 Agent 架构设计灵感
-- [melxy1997-ColumnWriter](https://github.com/melxy1997/ColumnWriter) - Orchestrator 协调模式参考
-- [LangChain](https://langchain.com) - 核心框架
-- [LangSmith](https://smith.langchain.com) - 可观测性平台
+- [LangChain](https://langchain.com) — LLM framework
+- [LangSmith](https://smith.langchain.com) — Observability
+- [ChromaDB](https://www.trychroma.com/) — Vector store
+- [markmap](https://markmap.js.org/) — Mind map rendering
+- [Yixiang-Wu/LearningAgent](https://github.com/Lorry-LY/LearningAgent) — Architecture inspiration
+
+---
+
+<p align="center">
+  <strong>Give learning a deadline. Give yourself a rhythm.</strong><br/>
+  If LearningIN28 helps you learn something new, consider giving it a ⭐
+</p>
